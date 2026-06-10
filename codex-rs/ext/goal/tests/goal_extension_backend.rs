@@ -489,7 +489,7 @@ async fn budget_limited_goal_keeps_accounting_after_later_tool_finish() -> anyho
 }
 
 #[tokio::test]
-async fn turn_error_usage_limit_accounts_progress_and_clears_accounting() -> anyhow::Result<()> {
+async fn usage_limit_turn_error_keeps_goal_active() -> anyhow::Result<()> {
     let runtime = test_runtime().await?;
     let thread_id = test_thread_id()?;
     seed_thread_metadata(runtime.as_ref(), thread_id).await?;
@@ -525,25 +525,9 @@ async fn turn_error_usage_limit_accounts_progress_and_clears_accounting() -> any
         .get_thread_goal(thread_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("goal should exist"))?;
-    assert_eq!(23, goal.tokens_used);
-    assert_eq!(codex_state::ThreadGoalStatus::UsageLimited, goal.status);
-    assert_eq!(
-        vec![
-            CapturedGoalEvent {
-                event_id: "turn-1:usage-limit-progress".to_string(),
-                turn_id: Some("turn-1".to_string()),
-                status: ThreadGoalStatus::Active,
-                tokens_used: 23,
-            },
-            CapturedGoalEvent {
-                event_id: "turn-1:usage-limit".to_string(),
-                turn_id: Some("turn-1".to_string()),
-                status: ThreadGoalStatus::UsageLimited,
-                tokens_used: 23,
-            },
-        ],
-        harness.sink.goal_events()
-    );
+    assert_eq!(0, goal.tokens_used);
+    assert_eq!(codex_state::ThreadGoalStatus::Active, goal.status);
+    assert_eq!(Vec::<CapturedGoalEvent>::new(), harness.sink.goal_events());
 
     harness
         .record_token_usage(
@@ -566,12 +550,12 @@ async fn turn_error_usage_limit_accounts_progress_and_clears_accounting() -> any
         .await?
         .ok_or_else(|| anyhow::anyhow!("goal should exist"))?;
     assert_eq!(23, goal.tokens_used);
-    assert_eq!(codex_state::ThreadGoalStatus::UsageLimited, goal.status);
+    assert_eq!(codex_state::ThreadGoalStatus::Active, goal.status);
     Ok(())
 }
 
 #[tokio::test]
-async fn turn_error_blocks_goal() -> anyhow::Result<()> {
+async fn non_usage_limit_turn_error_keeps_goal_active() -> anyhow::Result<()> {
     let runtime = test_runtime().await?;
     let thread_id = test_thread_id()?;
     seed_thread_metadata(runtime.as_ref(), thread_id).await?;
@@ -586,6 +570,7 @@ async fn turn_error_blocks_goal() -> anyhow::Result<()> {
             json!({ "objective": "ship goal extension backend" }),
         ))
         .await?;
+    harness.sink.clear();
 
     harness
         .notify_turn_error("turn-1", CodexErrorInfo::Other)
@@ -596,7 +581,8 @@ async fn turn_error_blocks_goal() -> anyhow::Result<()> {
         .get_thread_goal(thread_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("goal should exist"))?;
-    assert_eq!(codex_state::ThreadGoalStatus::Blocked, goal.status);
+    assert_eq!(codex_state::ThreadGoalStatus::Active, goal.status);
+    assert_eq!(Vec::<CapturedGoalEvent>::new(), harness.sink.goal_events());
     Ok(())
 }
 

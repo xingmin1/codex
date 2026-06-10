@@ -30,6 +30,7 @@ pub use crate::request::Request;
 pub use crate::request::RequestBody;
 pub use crate::request::RequestCompression;
 pub use crate::request::Response;
+pub use crate::retry::MAX_RETRY_DELAY;
 pub use crate::retry::RetryOn;
 pub use crate::retry::RetryPolicy;
 pub use crate::retry::backoff;

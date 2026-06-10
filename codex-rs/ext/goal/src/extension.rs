@@ -26,7 +26,6 @@ use codex_extension_api::TurnStartInput;
 use codex_extension_api::TurnStopInput;
 use codex_otel::MetricsClient;
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadGoalStatus;
@@ -38,7 +37,6 @@ use crate::analytics::GoalAnalytics;
 use crate::api::GoalService;
 use crate::events::GoalEventEmitter;
 use crate::metrics::GoalMetrics;
-use crate::runtime::ActiveGoalStopReason;
 use crate::runtime::GoalRuntimeConfig;
 use crate::runtime::GoalRuntimeHandle;
 use crate::spec::UPDATE_GOAL_TOOL_NAME;
@@ -296,29 +294,8 @@ where
         })
     }
 
-    fn on_turn_error<'a>(&'a self, input: TurnErrorInput<'a>) -> ExtensionFuture<'a, ()> {
+    fn on_turn_error<'a>(&'a self, _input: TurnErrorInput<'a>) -> ExtensionFuture<'a, ()> {
         Box::pin(async move {
-            let Some(runtime) = goal_runtime_handle(input.thread_store) else {
-                return;
-            };
-
-            let reason = match input.error {
-                CodexErrorInfo::UsageLimitExceeded => ActiveGoalStopReason::UsageLimit,
-                // The turn has ended because the error was non-retryable or its
-                // retries were exhausted. Block the goal to prevent automatic
-                // continuation from looping and consuming tokens, as can happen
-                // with compaction errors.
-                _ => ActiveGoalStopReason::TurnError,
-            };
-            if let Err(err) = runtime
-                .stop_active_goal_for_turn(input.turn_id, reason)
-                .await
-            {
-                tracing::warn!(
-                    error = ?input.error,
-                    "failed to stop active goal after turn error: {err}"
-                );
-            }
         })
     }
 }
