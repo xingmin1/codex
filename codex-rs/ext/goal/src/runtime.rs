@@ -31,11 +31,6 @@ pub(crate) struct GoalRuntimeConfig {
     pub(crate) tools_available_for_thread: bool,
 }
 
-pub(crate) enum ActiveGoalStopReason {
-    TurnError,
-    UsageLimit,
-}
-
 struct GoalRuntimeInner {
     thread_id: ThreadId,
     state_dbs: Arc<codex_state::StateRuntime>,
@@ -236,16 +231,11 @@ impl GoalRuntimeHandle {
     }
 
     pub async fn usage_limit_active_goal_for_turn(&self, turn_id: &str) -> Result<(), String> {
-        self.stop_active_goal_for_turn(turn_id, ActiveGoalStopReason::UsageLimit)
-            .await
+        self.stop_active_goal_for_turn(turn_id).await
     }
 
-    /// Accounts the ending turn and stops its active goal after a terminal error.
-    pub(crate) async fn stop_active_goal_for_turn(
-        &self,
-        turn_id: &str,
-        reason: ActiveGoalStopReason,
-    ) -> Result<(), String> {
+    /// Accounts the ending turn and stops its active goal after a usage limit.
+    async fn stop_active_goal_for_turn(&self, turn_id: &str) -> Result<(), String> {
         if !self.is_enabled() {
             return Ok(());
         }
@@ -261,14 +251,8 @@ impl GoalRuntimeHandle {
             return Ok(());
         }
 
-        let (event_name, status) = match reason {
-            ActiveGoalStopReason::TurnError => {
-                ("turn-error", codex_state::ThreadGoalStatus::Blocked)
-            }
-            ActiveGoalStopReason::UsageLimit => {
-                ("usage-limit", codex_state::ThreadGoalStatus::UsageLimited)
-            }
-        };
+        let event_name = "usage-limit";
+        let status = codex_state::ThreadGoalStatus::UsageLimited;
         self.account_active_goal_progress(
             turn_id,
             &format!("{turn_id}:{event_name}-progress"),

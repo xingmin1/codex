@@ -571,7 +571,7 @@ async fn turn_error_usage_limit_accounts_progress_and_clears_accounting() -> any
 }
 
 #[tokio::test]
-async fn turn_error_blocks_goal() -> anyhow::Result<()> {
+async fn non_usage_limit_turn_error_keeps_goal_active() -> anyhow::Result<()> {
     let runtime = test_runtime().await?;
     let thread_id = test_thread_id()?;
     seed_thread_metadata(runtime.as_ref(), thread_id).await?;
@@ -586,6 +586,7 @@ async fn turn_error_blocks_goal() -> anyhow::Result<()> {
             json!({ "objective": "ship goal extension backend" }),
         ))
         .await?;
+    harness.sink.clear();
 
     harness
         .notify_turn_error("turn-1", CodexErrorInfo::Other)
@@ -596,7 +597,8 @@ async fn turn_error_blocks_goal() -> anyhow::Result<()> {
         .get_thread_goal(thread_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("goal should exist"))?;
-    assert_eq!(codex_state::ThreadGoalStatus::Blocked, goal.status);
+    assert_eq!(codex_state::ThreadGoalStatus::Active, goal.status);
+    assert_eq!(Vec::<CapturedGoalEvent>::new(), harness.sink.goal_events());
     Ok(())
 }
 
