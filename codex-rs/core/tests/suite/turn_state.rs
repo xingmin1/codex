@@ -89,6 +89,70 @@ async fn responses_turn_state_persists_within_turn_and_resets_after() -> Result<
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_persistent_retry_resets_turn_state_after_retry_budget() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+
+    let incomplete_response = sse(vec![ev_response_created("resp-incomplete")]);
+    let retry_response = sse(vec![ev_response_created("resp-retry")]);
+    let completed_response = sse(vec![
+        ev_response_created("resp-complete"),
+        ev_assistant_message("msg-1", "done"),
+        ev_completed("resp-complete"),
+    ]);
+
+    let responses = vec![
+        sse_response(incomplete_response).insert_header(TURN_STATE_HEADER, "stale-ts-1"),
+        sse_response(retry_response),
+        sse_response(completed_response),
+    ];
+    let request_log = mount_response_sequence(&server, responses).await;
+
+    let test = test_codex()
+        .with_config(|config| {
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(1);
+            config.model_provider.stream_idle_timeout_ms = Some(2_000);
+            config.model_provider.supports_websockets = false;
+        })
+        .build(&server)
+        .await?;
+
+    test.submit_turn("retry until the stream completes").await?;
+
+    let requests = request_log.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].header(TURN_STATE_HEADER), None);
+    assert_eq!(
+        requests[1].header(TURN_STATE_HEADER),
+        Some("stale-ts-1".to_string())
+    );
+    assert_eq!(requests[2].header(TURN_STATE_HEADER), None);
+
+    let parse_turn_id = |header: Option<String>| {
+        let value = header?;
+        let parsed: Value = serde_json::from_str(&value).ok()?;
+        parsed
+            .get("turn_id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+
+    let first_turn_id = parse_turn_id(requests[0].header("x-codex-turn-metadata"))
+        .expect("first request should include turn metadata turn_id");
+    let second_turn_id = parse_turn_id(requests[1].header("x-codex-turn-metadata"))
+        .expect("short retry request should include turn metadata turn_id");
+    let third_turn_id = parse_turn_id(requests[2].header("x-codex-turn-metadata"))
+        .expect("persistent retry request should include turn metadata turn_id");
+
+    assert_eq!(first_turn_id, second_turn_id);
+    assert_eq!(second_turn_id, third_turn_id);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn websocket_turn_state_persists_within_turn_and_resets_after() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

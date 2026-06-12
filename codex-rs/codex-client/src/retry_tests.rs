@@ -9,14 +9,14 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-fn retry_policy_with_no_configured_retries() -> RetryPolicy {
+fn retry_policy(max_attempts: u64) -> RetryPolicy {
     RetryPolicy {
-        max_attempts: 0,
+        max_attempts,
         base_delay: Duration::ZERO,
         retry_on: RetryOn {
-            retry_429: false,
-            retry_5xx: false,
-            retry_transport: false,
+            retry_429: true,
+            retry_5xx: true,
+            retry_transport: true,
         },
     }
 }
@@ -35,7 +35,35 @@ fn http_error(status: StatusCode) -> TransportError {
 }
 
 #[test]
-fn retry_decision_retries_all_http_network_and_timeout_errors() {
+fn retry_decision_respects_configured_error_classes() {
+    let retry_on = RetryOn {
+        retry_429: true,
+        retry_5xx: true,
+        retry_transport: true,
+    };
+
+    for err in [
+        http_error(StatusCode::TOO_MANY_REQUESTS),
+        http_error(StatusCode::INTERNAL_SERVER_ERROR),
+        http_error(StatusCode::BAD_GATEWAY),
+        TransportError::Timeout,
+        TransportError::Network("connection reset".to_string()),
+    ] {
+        assert!(retry_on.should_retry(&err, 0, 1));
+    }
+
+    for err in [
+        http_error(StatusCode::BAD_REQUEST),
+        http_error(StatusCode::UNAUTHORIZED),
+        TransportError::Build("invalid request".to_string()),
+        TransportError::RetryLimit,
+    ] {
+        assert!(!retry_on.should_retry(&err, 0, 1));
+    }
+}
+
+#[test]
+fn retry_decision_respects_disabled_error_classes() {
     let retry_on = RetryOn {
         retry_429: false,
         retry_5xx: false,
@@ -43,18 +71,25 @@ fn retry_decision_retries_all_http_network_and_timeout_errors() {
     };
 
     for err in [
-        http_error(StatusCode::BAD_REQUEST),
-        http_error(StatusCode::UNAUTHORIZED),
         http_error(StatusCode::TOO_MANY_REQUESTS),
-        http_error(StatusCode::INTERNAL_SERVER_ERROR),
+        http_error(StatusCode::BAD_GATEWAY),
         TransportError::Timeout,
         TransportError::Network("connection reset".to_string()),
     ] {
-        assert!(retry_on.should_retry(&err, 10, 0));
+        assert!(!retry_on.should_retry(&err, 0, 1));
     }
+}
 
-    assert!(!retry_on.should_retry(&TransportError::Build("invalid request".to_string()), 0, 0));
-    assert!(!retry_on.should_retry(&TransportError::RetryLimit, 0, 0));
+#[test]
+fn retry_decision_stops_after_configured_attempts() {
+    let retry_on = RetryOn {
+        retry_429: true,
+        retry_5xx: true,
+        retry_transport: true,
+    };
+
+    assert!(retry_on.should_retry(&http_error(StatusCode::BAD_GATEWAY), 0, 1));
+    assert!(!retry_on.should_retry(&http_error(StatusCode::BAD_GATEWAY), 1, 1));
 }
 
 #[test]
@@ -67,30 +102,51 @@ fn backoff_never_exceeds_max_retry_delay() {
 }
 
 #[tokio::test]
-async fn run_with_retry_retries_http_errors_past_configured_limit() {
+async fn run_with_retry_retries_until_configured_limit() {
     let attempts = Arc::new(AtomicU64::new(0));
     let attempts_for_op = Arc::clone(&attempts);
 
-    let result = run_with_retry(
-        retry_policy_with_no_configured_retries(),
-        request,
-        move |_request, attempt| {
-            let attempts_for_op = Arc::clone(&attempts_for_op);
-            async move {
-                let current = attempts_for_op.fetch_add(1, Ordering::SeqCst);
-                if current < 3 {
-                    Err(http_error(StatusCode::BAD_REQUEST))
-                } else {
-                    Ok(attempt)
-                }
+    let result = run_with_retry(retry_policy(3), request, move |_request, attempt| {
+        let attempts_for_op = Arc::clone(&attempts_for_op);
+        async move {
+            let current = attempts_for_op.fetch_add(1, Ordering::SeqCst);
+            if current < 3 {
+                Err(http_error(StatusCode::BAD_GATEWAY))
+            } else {
+                Ok(attempt)
             }
-        },
-    )
+        }
+    })
     .await
-    .expect("HTTP errors should keep retrying until the request succeeds");
+    .expect("retryable HTTP errors should retry within the configured limit");
 
     assert_eq!(3, result);
     assert_eq!(4, attempts.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn run_with_retry_returns_error_after_configured_limit() {
+    let attempts = Arc::new(AtomicU64::new(0));
+    let attempts_for_op = Arc::clone(&attempts);
+
+    let err = run_with_retry(retry_policy(2), request, move |_request, _attempt| {
+        let attempts_for_op = Arc::clone(&attempts_for_op);
+        async move {
+            attempts_for_op.fetch_add(1, Ordering::SeqCst);
+            Err::<(), _>(http_error(StatusCode::BAD_GATEWAY))
+        }
+    })
+    .await
+    .expect_err("retryable HTTP errors should stop after the configured limit");
+
+    assert!(matches!(
+        err,
+        TransportError::Http {
+            status: StatusCode::BAD_GATEWAY,
+            ..
+        }
+    ));
+    assert_eq!(3, attempts.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
@@ -98,17 +154,13 @@ async fn run_with_retry_does_not_retry_request_build_errors() {
     let attempts = Arc::new(AtomicU64::new(0));
     let attempts_for_op = Arc::clone(&attempts);
 
-    let err = run_with_retry(
-        retry_policy_with_no_configured_retries(),
-        request,
-        move |_request, _attempt| {
-            let attempts_for_op = Arc::clone(&attempts_for_op);
-            async move {
-                attempts_for_op.fetch_add(1, Ordering::SeqCst);
-                Err::<(), _>(TransportError::Build("invalid request".to_string()))
-            }
-        },
-    )
+    let err = run_with_retry(retry_policy(3), request, move |_request, _attempt| {
+        let attempts_for_op = Arc::clone(&attempts_for_op);
+        async move {
+            attempts_for_op.fetch_add(1, Ordering::SeqCst);
+            Err::<(), _>(TransportError::Build("invalid request".to_string()))
+        }
+    })
     .await
     .expect_err("request build errors should not retry");
 

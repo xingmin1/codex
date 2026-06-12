@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use crate::SkillInjections;
 use crate::build_skill_injections;
@@ -119,6 +120,9 @@ use tracing::instrument;
 use tracing::trace;
 use tracing::trace_span;
 use tracing::warn;
+
+const SAMPLING_PERSISTENT_RETRY_BASE_DELAY: Duration = Duration::from_secs(5);
+const SAMPLING_PERSISTENT_RETRY_MAX_DELAY: Duration = Duration::from_secs(10 * 60);
 
 /// Takes initial turn input and runs a loop where, at each sampling request,
 /// the model replies with either:
@@ -1055,6 +1059,7 @@ async fn run_sampling_request(
     );
     let max_retries = turn_context.provider.info().stream_max_retries();
     let mut retries = 0;
+    let mut persistent_retry_cycles = 0u64;
     let mut initial_input = Some(input);
     loop {
         let prompt_input = if let Some(input) = initial_input.take() {
@@ -1104,7 +1109,7 @@ async fn run_sampling_request(
             return Err(err);
         }
 
-        handle_retryable_response_stream_error(
+        match handle_retryable_response_stream_error(
             &mut retries,
             max_retries,
             err,
@@ -1113,9 +1118,66 @@ async fn run_sampling_request(
             &turn_context,
             ResponsesStreamRequest::Sampling,
         )
-        .await?;
-        turn_context.turn_timing_state.record_sampling_retry();
+        .await
+        {
+            Ok(()) => {
+                turn_context.turn_timing_state.record_sampling_retry();
+            }
+            Err(err) => {
+                if !is_persistent_sampling_retry_error(&err) {
+                    return Err(err);
+                }
+                persistent_retry_cycles = persistent_retry_cycles.saturating_add(1);
+                let delay = persistent_sampling_retry_delay(persistent_retry_cycles);
+                warn!(
+                    turn_id = %turn_context.sub_id,
+                    persistent_retry_cycles,
+                    max_retries,
+                    retry_delay = ?delay,
+                    error = %err,
+                    "sampling retry budget exhausted; resetting stream state before continuing"
+                );
+                client_session.reset_stream_retry_state();
+                retries = 0;
+                sess.notify_stream_error(
+                    &turn_context,
+                    format!("Reconnecting... still retrying ({persistent_retry_cycles})"),
+                    err,
+                )
+                .await;
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => {}
+                    _ = cancellation_token.cancelled() => return Err(CodexErr::TurnAborted),
+                }
+                turn_context.turn_timing_state.record_sampling_retry();
+            }
+        }
     }
+}
+
+fn is_persistent_sampling_retry_error(err: &CodexErr) -> bool {
+    match err {
+        CodexErr::Stream(..)
+        | CodexErr::RequestTimeout
+        | CodexErr::ResponseStreamFailed(_)
+        | CodexErr::ConnectionFailed(_)
+        | CodexErr::InternalServerError => true,
+        CodexErr::UnexpectedStatus(err) => {
+            err.status.is_server_error() || err.status == http::StatusCode::REQUEST_TIMEOUT
+        }
+        _ => false,
+    }
+}
+
+fn persistent_sampling_retry_delay(retry_cycles: u64) -> Duration {
+    let retry_cycles = retry_cycles.max(1);
+    let shift = retry_cycles.saturating_sub(1).min(63);
+    let multiplier = 1u128 << shift;
+    let delay_ms = SAMPLING_PERSISTENT_RETRY_BASE_DELAY
+        .as_millis()
+        .saturating_mul(multiplier)
+        .min(SAMPLING_PERSISTENT_RETRY_MAX_DELAY.as_millis());
+    Duration::from_millis(delay_ms as u64)
 }
 
 #[instrument(level = "trace",
