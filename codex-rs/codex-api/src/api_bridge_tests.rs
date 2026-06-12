@@ -125,6 +125,18 @@ fn map_api_error_keeps_unknown_400_errors_generic() {
 }
 
 #[test]
+fn map_api_error_maps_request_build_error_to_invalid_request() {
+    let err = map_api_error(ApiError::Transport(TransportError::Build(
+        "failed to encode responses request".to_string(),
+    )));
+
+    let CodexErr::InvalidRequest(message) = err else {
+        panic!("expected CodexErr::InvalidRequest, got {err:?}");
+    };
+    assert_eq!(message, "failed to encode responses request");
+}
+
+#[test]
 fn map_api_error_maps_usage_limit_limit_name_header() {
     let mut headers = HeaderMap::new();
     headers.insert(

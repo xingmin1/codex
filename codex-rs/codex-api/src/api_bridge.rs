@@ -128,9 +128,8 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
                 request_id: None,
             }),
             TransportError::Timeout => CodexErr::RequestTimeout,
-            TransportError::Network(msg) | TransportError::Build(msg) => {
-                CodexErr::Stream(msg, None)
-            }
+            TransportError::Network(msg) => CodexErr::Stream(msg, None),
+            TransportError::Build(msg) => CodexErr::InvalidRequest(msg),
         },
         ApiError::RateLimit(msg) => CodexErr::Stream(msg, None),
     }

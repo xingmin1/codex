@@ -23,16 +23,24 @@ pub struct RetryOn {
 }
 
 impl RetryOn {
-    pub fn should_retry(&self, err: &TransportError, _attempt: u64, _max_attempts: u64) -> bool {
+    /// 判断当前传输错误是否应该按策略继续重试。
+    pub fn should_retry(&self, err: &TransportError, attempt: u64, max_attempts: u64) -> bool {
+        if attempt >= max_attempts {
+            return false;
+        }
+
         match err {
-            TransportError::Http { .. } | TransportError::Timeout | TransportError::Network(_) => {
-                true
+            TransportError::Http { status, .. } => {
+                (*status == http::StatusCode::TOO_MANY_REQUESTS && self.retry_429)
+                    || (status.is_server_error() && self.retry_5xx)
             }
+            TransportError::Timeout | TransportError::Network(_) => self.retry_transport,
             TransportError::Build(_) | TransportError::RetryLimit => false,
         }
     }
 }
 
+/// 计算指数退避等待时间，并限制到单次最大等待时间以内。
 pub fn backoff(base: Duration, attempt: u64) -> Duration {
     if attempt == 0 {
         return base.min(MAX_RETRY_DELAY);
@@ -45,6 +53,7 @@ pub fn backoff(base: Duration, attempt: u64) -> Duration {
     delay.min(MAX_RETRY_DELAY)
 }
 
+/// 按重试策略反复构造请求并执行操作，直到成功或遇到不可重试错误。
 pub async fn run_with_retry<T, F, Fut>(
     policy: RetryPolicy,
     mut make_req: impl FnMut() -> Request,

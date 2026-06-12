@@ -991,6 +991,12 @@ impl ModelClientSession {
             .set_connection_reused(/*connection_reused*/ false);
     }
 
+    /// 丢弃当前采样请求的流式传输状态，避免长期重试继续复用旧的 sticky routing 状态。
+    pub(crate) fn reset_stream_retry_state(&mut self) {
+        self.reset_websocket_session();
+        self.turn_state = Arc::new(OnceLock::new());
+    }
+
     #[allow(clippy::too_many_arguments)]
     /// Builds shared Responses API transport options and request-body options.
     ///

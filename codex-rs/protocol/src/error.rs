@@ -196,7 +196,6 @@ impl CodexErr {
             CodexErr::Stream(..)
             | CodexErr::Timeout
             | CodexErr::RequestTimeout
-            | CodexErr::UnexpectedStatus(_)
             | CodexErr::ResponseStreamFailed(_)
             | CodexErr::ConnectionFailed(_)
             | CodexErr::InternalServerError
@@ -204,6 +203,9 @@ impl CodexErr {
             | CodexErr::Io(_)
             | CodexErr::Json(_)
             | CodexErr::TokioJoin(_) => true,
+            CodexErr::UnexpectedStatus(err) => {
+                err.status.is_server_error() || err.status == StatusCode::REQUEST_TIMEOUT
+            }
             #[cfg(target_os = "linux")]
             CodexErr::LandlockRuleset(_) | CodexErr::LandlockPathFd(_) => false,
         }

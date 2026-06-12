@@ -167,6 +167,28 @@ impl FlakyTransport {
 }
 
 #[derive(Clone)]
+struct HttpStatusTransport {
+    status: StatusCode,
+    attempts: Arc<Mutex<i64>>,
+}
+
+impl HttpStatusTransport {
+    fn new(status: StatusCode) -> Self {
+        Self {
+            status,
+            attempts: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn attempts(&self) -> i64 {
+        *self
+            .attempts
+            .lock()
+            .unwrap_or_else(|err| panic!("mutex poisoned: {err}"))
+    }
+}
+
+#[derive(Clone)]
 struct FailsOnceAuth {
     attempts: Arc<Mutex<i64>>,
     error: Arc<AuthError>,
@@ -247,6 +269,28 @@ data: {"id":"resp-1","output":[{"type":"message","role":"assistant","content":[{
             status: StatusCode::OK,
             headers: HeaderMap::new(),
             bytes: Box::pin(stream),
+        })
+    }
+}
+
+#[async_trait]
+impl HttpTransport for HttpStatusTransport {
+    async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
+        Err(TransportError::Build("execute should not run".to_string()))
+    }
+
+    async fn stream(&self, _req: Request) -> Result<StreamResponse, TransportError> {
+        let mut attempts = self
+            .attempts
+            .lock()
+            .unwrap_or_else(|err| panic!("mutex poisoned: {err}"));
+        *attempts += 1;
+
+        Err(TransportError::Http {
+            status: self.status,
+            url: None,
+            headers: None,
+            body: None,
         })
     }
 }
@@ -348,6 +392,72 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
         )
         .await?;
     assert_eq!(transport.attempts(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn streaming_client_stops_retrying_5xx_after_configured_limit() -> Result<()> {
+    let transport = HttpStatusTransport::new(StatusCode::BAD_GATEWAY);
+
+    let mut provider = provider("openai");
+    provider.retry.max_attempts = 2;
+    provider.retry.retry_5xx = true;
+
+    let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));
+    let result = client
+        .stream(
+            serde_json::json!({ "model": "gpt-test" }),
+            HeaderMap::new(),
+            Compression::None,
+            /*turn_state*/ None,
+        )
+        .await;
+    let err = match result {
+        Ok(_) => panic!("5xx responses should stop after the configured retry limit"),
+        Err(err) => err,
+    };
+
+    assert!(matches!(
+        err,
+        ApiError::Transport(TransportError::Http {
+            status: StatusCode::BAD_GATEWAY,
+            ..
+        })
+    ));
+    assert_eq!(transport.attempts(), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn streaming_client_does_not_retry_4xx_response_errors() -> Result<()> {
+    let transport = HttpStatusTransport::new(StatusCode::BAD_REQUEST);
+
+    let mut provider = provider("openai");
+    provider.retry.max_attempts = 2;
+    provider.retry.retry_5xx = true;
+
+    let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));
+    let result = client
+        .stream(
+            serde_json::json!({ "model": "gpt-test" }),
+            HeaderMap::new(),
+            Compression::None,
+            /*turn_state*/ None,
+        )
+        .await;
+    let err = match result {
+        Ok(_) => panic!("4xx responses should fail without retry"),
+        Err(err) => err,
+    };
+
+    assert!(matches!(
+        err,
+        ApiError::Transport(TransportError::Http {
+            status: StatusCode::BAD_REQUEST,
+            ..
+        })
+    ));
+    assert_eq!(transport.attempts(), 1);
     Ok(())
 }
 

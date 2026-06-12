@@ -23,7 +23,7 @@ async fn continue_after_stream_error() {
 
     let server = MockServer::start().await;
 
-    let fail = ResponseTemplate::new(500)
+    let fail = ResponseTemplate::new(400)
         .insert_header("content-type", "application/json")
         .set_body_string(
             serde_json::json!({
@@ -32,13 +32,13 @@ async fn continue_after_stream_error() {
             .to_string(),
         );
 
-    // The provider below disables request retries (request_max_retries = 0),
-    // so the failing request should only occur once.
+    // Use a deterministic client error here: retryable 5xx failures stay inside the
+    // long-running retry loop and should not release the turn immediately.
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
         .and(body_string_contains("first message"))
         .respond_with(fail)
-        .up_to_n_times(2)
+        .up_to_n_times(1)
         .mount(&server)
         .await;
 
@@ -75,7 +75,7 @@ async fn continue_after_stream_error() {
         query_params: None,
         http_headers: None,
         env_http_headers: None,
-        request_max_retries: Some(1),
+        request_max_retries: Some(0),
         stream_max_retries: Some(1),
         stream_idle_timeout_ms: Some(2_000),
         websocket_connect_timeout_ms: None,

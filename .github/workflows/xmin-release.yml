@@ -1,0 +1,159 @@
+name: xmin-release
+
+on:
+  push:
+    tags:
+      - "v*-xmin.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag，例如 v0.1.0-xmin.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xmin-release-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release-linux-x86_64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TARGET: x86_64-unknown-linux-musl
+      VERSION_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERSION_TAG }}
+          persist-credentials: false
+
+      - name: Validate version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-xmin\.[0-9]+$ ]] || {
+            echo "Tag ${VERSION_TAG} must match vX.Y.Z-xmin.N" >&2
+            exit 1
+          }
+
+          tag_version="${VERSION_TAG#v}"
+          cargo_version="$(grep -m1 '^version' codex-rs/Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
+          package_version="$(node -p 'require("./codex-cli/package.json").version')"
+
+          [[ "$tag_version" == "$cargo_version" ]] || {
+            echo "Tag ${tag_version} does not match codex-rs/Cargo.toml ${cargo_version}" >&2
+            exit 1
+          }
+          [[ "$tag_version" == "$package_version" ]] || {
+            echo "Tag ${tag_version} does not match codex-cli/package.json ${package_version}" >&2
+            exit 1
+          }
+
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            binutils \
+            libcap-dev \
+            pkg-config \
+            zstd
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          targets: ${{ env.TARGET }}
+
+      - name: Use hermetic Cargo home
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_home="${GITHUB_WORKSPACE}/.cargo-home"
+          mkdir -p "${cargo_home}/bin"
+          echo "CARGO_HOME=${cargo_home}" >> "$GITHUB_ENV"
+          echo "${cargo_home}/bin" >> "$GITHUB_PATH"
+          : > "${cargo_home}/config.toml"
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+          use-cache: false
+
+      - name: Install musl build tools
+        env:
+          TARGET: ${{ env.TARGET }}
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+
+      - name: Configure rusty_v8 artifacts
+        uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: ${{ env.TARGET }}
+
+      - name: Build bwrap and export digest
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --target "$TARGET" --release --bin bwrap
+
+          bwrap_path="target/${TARGET}/release/bwrap"
+          strip --strip-debug --strip-unneeded "$bwrap_path"
+          echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap_path" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Build Codex binaries
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --target "$TARGET" --release --bin codex --bin codex-responses-api-proxy
+
+      - name: Strip binaries
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          strip --strip-debug --strip-unneeded "target/${TARGET}/release/codex"
+          strip --strip-debug --strip-unneeded "target/${TARGET}/release/codex-responses-api-proxy"
+
+      - name: Build Codex package archive
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "${GITHUB_WORKSPACE}/.github/scripts/build-codex-package-archive.sh" \
+            --target "$TARGET" \
+            --bundle primary \
+            --entrypoint-dir "target/${TARGET}/release" \
+            --archive-dir "dist/${TARGET}"
+
+      - name: Add checksum manifest
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "dist/${TARGET}"
+          sha256sum codex-package-"${TARGET}".tar.gz > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          name: ${{ env.VERSION_TAG }}
+          generate_release_notes: true
+          make_latest: true
+          files: |
+            codex-rs/dist/${{ env.TARGET }}/codex-package-${{ env.TARGET }}.tar.gz
+            codex-rs/dist/${{ env.TARGET }}/codex-package-${{ env.TARGET }}.tar.zst
+            codex-rs/dist/${{ env.TARGET }}/SHA256SUMS.txt
