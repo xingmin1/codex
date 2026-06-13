@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "要发布的 tag，例如 v0.1.0-xmin.1"
+        description: "要发布的 tag，例如 v0.140.0-xmin.1"
         required: true
         type: string
 
@@ -27,6 +27,7 @@ jobs:
       VERSION_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
       AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
+      CARGO_BUILD_JOBS: "2"
 
     steps:
       - name: Checkout
@@ -117,7 +118,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --target "$TARGET" --release --bin codex --bin codex-responses-api-proxy
+          cargo build --target "$TARGET" --release --bin codex-responses-api-proxy
+          cargo build --target "$TARGET" --release --bin codex
 
       - name: Strip binaries
         working-directory: codex-rs
