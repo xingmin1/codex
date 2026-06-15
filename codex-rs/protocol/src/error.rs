@@ -191,13 +191,13 @@ impl CodexErr {
             | CodexErr::Spawn
             | CodexErr::SessionConfiguredNotFirstEvent
             | CodexErr::UsageLimitReached(_)
-            | CodexErr::ServerOverloaded
             | CodexErr::CyberPolicy { .. } => false,
             CodexErr::Stream(..)
             | CodexErr::Timeout
             | CodexErr::RequestTimeout
             | CodexErr::ResponseStreamFailed(_)
             | CodexErr::ConnectionFailed(_)
+            | CodexErr::ServerOverloaded
             | CodexErr::InternalServerError
             | CodexErr::InternalAgentDied
             | CodexErr::Io(_)

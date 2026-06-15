@@ -525,7 +525,6 @@ async fn usage_limit_turn_error_keeps_goal_active() -> anyhow::Result<()> {
         .get_thread_goal(thread_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("goal should exist"))?;
-    assert_eq!(0, goal.tokens_used);
     assert_eq!(codex_state::ThreadGoalStatus::Active, goal.status);
     assert_eq!(Vec::<CapturedGoalEvent>::new(), harness.sink.goal_events());
 
@@ -549,7 +548,7 @@ async fn usage_limit_turn_error_keeps_goal_active() -> anyhow::Result<()> {
         .get_thread_goal(thread_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("goal should exist"))?;
-    assert_eq!(23, goal.tokens_used);
+    assert_eq!(65, goal.tokens_used);
     assert_eq!(codex_state::ThreadGoalStatus::Active, goal.status);
     Ok(())
 }

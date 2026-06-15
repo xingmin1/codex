@@ -1161,6 +1161,7 @@ fn is_persistent_sampling_retry_error(err: &CodexErr) -> bool {
         | CodexErr::RequestTimeout
         | CodexErr::ResponseStreamFailed(_)
         | CodexErr::ConnectionFailed(_)
+        | CodexErr::ServerOverloaded
         | CodexErr::InternalServerError => true,
         CodexErr::UnexpectedStatus(err) => {
             err.status.is_server_error() || err.status == http::StatusCode::REQUEST_TIMEOUT

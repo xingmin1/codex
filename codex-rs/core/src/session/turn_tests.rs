@@ -85,6 +85,7 @@ fn persistent_sampling_retry_allows_only_recoverable_upstream_errors() {
     let retryable_errors = [
         CodexErr::Stream("stream closed before response.completed".to_string(), None),
         CodexErr::RequestTimeout,
+        CodexErr::ServerOverloaded,
         CodexErr::InternalServerError,
         unexpected_status(StatusCode::BAD_GATEWAY),
         unexpected_status(StatusCode::GATEWAY_TIMEOUT),

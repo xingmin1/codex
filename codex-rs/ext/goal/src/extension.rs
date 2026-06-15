@@ -295,8 +295,7 @@ where
     }
 
     fn on_turn_error<'a>(&'a self, _input: TurnErrorInput<'a>) -> ExtensionFuture<'a, ()> {
-        Box::pin(async move {
-        })
+        Box::pin(async move {})
     }
 }
 
