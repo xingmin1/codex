@@ -34,6 +34,17 @@ fn assistant_message(text: &str) -> ResponseItem {
     }
 }
 
+fn developer_message(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+    }
+}
+
 fn inter_agent_assistant_message(text: &str) -> ResponseItem {
     let communication = InterAgentCommunication::new(
         AgentPath::root(),
@@ -1028,10 +1039,11 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
                 ..Default::default()
             },
         )),
-        // Compaction clears baseline until a later TurnContextItem re-establishes it.
+        // A compacted replacement history with developer context still carries the baseline that
+        // the later TurnContextItem refers to.
         RolloutItem::Compacted(CompactedItem {
             message: String::new(),
-            replacement_history: Some(Vec::new()),
+            replacement_history: Some(vec![developer_message("<permissions instructions>")]),
             window_id: None,
         }),
         RolloutItem::TurnContext(previous_context_item),
@@ -1088,6 +1100,92 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
         }))
         .expect("serialize expected reference context item")
     );
+}
+
+#[tokio::test]
+async fn record_initial_history_resumed_contextless_compaction_clears_later_reference_context_item()
+{
+    let (session, turn_context) = make_session_and_context().await;
+    let previous_model = "previous-rollout-model";
+    let previous_context_item = TurnContextItem {
+        turn_id: Some(turn_context.sub_id.clone()),
+        #[allow(deprecated)]
+        cwd: turn_context.cwd.to_path_buf(),
+        workspace_roots: None,
+        current_date: turn_context.current_date.clone(),
+        timezone: turn_context.timezone.clone(),
+        approval_policy: turn_context.approval_policy.value(),
+        sandbox_policy: turn_context.sandbox_policy(),
+        permission_profile: None,
+        network: None,
+        file_system_sandbox_policy: None,
+        model: previous_model.to_string(),
+        comp_hash: None,
+        personality: turn_context.personality,
+        collaboration_mode: Some(turn_context.collaboration_mode.clone()),
+        multi_agent_version: None,
+        realtime_active: Some(turn_context.realtime_active),
+        effort: turn_context.reasoning_effort.clone(),
+        summary: codex_protocol::config_types::ReasoningSummary::Auto,
+    };
+    let previous_turn_id = previous_context_item
+        .turn_id
+        .clone()
+        .expect("turn context should have turn_id");
+    let rollout_items = vec![
+        RolloutItem::EventMsg(EventMsg::TurnStarted(
+            codex_protocol::protocol::TurnStartedEvent {
+                turn_id: previous_turn_id.clone(),
+                trace_id: None,
+                started_at: None,
+                model_context_window: Some(128_000),
+                collaboration_mode_kind: ModeKind::Default,
+            },
+        )),
+        RolloutItem::EventMsg(EventMsg::UserMessage(
+            codex_protocol::protocol::UserMessageEvent {
+                client_id: None,
+                message: "seed".to_string(),
+                images: None,
+                local_images: Vec::new(),
+                text_elements: Vec::new(),
+                ..Default::default()
+            },
+        )),
+        RolloutItem::Compacted(CompactedItem {
+            message: String::new(),
+            replacement_history: Some(vec![assistant_message("summary without startup context")]),
+            window_id: None,
+        }),
+        RolloutItem::TurnContext(previous_context_item),
+        RolloutItem::EventMsg(EventMsg::TurnComplete(
+            codex_protocol::protocol::TurnCompleteEvent {
+                turn_id: previous_turn_id,
+                last_agent_message: None,
+                completed_at: None,
+                duration_ms: None,
+                time_to_first_token_ms: None,
+            },
+        )),
+    ];
+
+    session
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: ThreadId::default(),
+            history: rollout_items,
+            rollout_path: Some(PathBuf::from("/tmp/resume.jsonl")),
+        }))
+        .await;
+
+    assert_eq!(
+        session.previous_turn_settings().await,
+        Some(PreviousTurnSettings {
+            model: previous_model.to_string(),
+            comp_hash: None,
+            realtime_active: Some(turn_context.realtime_active),
+        })
+    );
+    assert!(session.reference_context_item().await.is_none());
 }
 
 #[tokio::test]

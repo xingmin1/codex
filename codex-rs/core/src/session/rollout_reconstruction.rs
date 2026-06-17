@@ -1,5 +1,6 @@
 use super::*;
 use crate::context_manager::is_user_turn_boundary;
+use crate::event_mapping::is_contextual_user_message_content;
 
 // Return value of `Session::reconstruct_history_from_rollout`, bundling the rebuilt history with
 // the resume/fork hydration metadata derived from the same replay.
@@ -35,6 +36,20 @@ struct ActiveReplaySegment<'a> {
     reference_context_item: TurnReferenceContextItem,
     base_replacement_history: Option<&'a [ResponseItem]>,
     window_id: Option<u64>,
+}
+
+fn item_has_initial_context_baseline(item: &ResponseItem) -> bool {
+    match item {
+        ResponseItem::Message { role, content, .. } if role == "developer" => true,
+        ResponseItem::Message { role, content, .. } if role == "user" => {
+            is_contextual_user_message_content(content)
+        }
+        _ => false,
+    }
+}
+
+fn history_has_initial_context_baseline(history: &[ResponseItem]) -> bool {
+    history.iter().any(item_has_initial_context_baseline)
 }
 
 fn turn_ids_are_compatible(active_turn_id: Option<&str>, item_turn_id: Option<&str>) -> bool {
@@ -260,6 +275,7 @@ impl Session {
 
         let mut history = ContextManager::new();
         let mut saw_legacy_compaction_without_replacement_history = false;
+        let mut saw_compaction_replacement_history = base_replacement_history.is_some();
         if let Some(base_replacement_history) = base_replacement_history {
             history.replace(base_replacement_history.to_vec());
         }
@@ -283,6 +299,7 @@ impl Session {
                 }
                 RolloutItem::Compacted(compacted) => {
                     if let Some(replacement_history) = &compacted.replacement_history {
+                        saw_compaction_replacement_history = true;
                         // This should actually never happen, because the reverse loop above (to build rollout_suffix)
                         // should stop before any compaction that has Some replacement_history
                         history.replace(replacement_history.clone());
@@ -321,6 +338,10 @@ impl Session {
             }
         };
         let reference_context_item = if saw_legacy_compaction_without_replacement_history {
+            None
+        } else if saw_compaction_replacement_history
+            && !history_has_initial_context_baseline(history.raw_items())
+        {
             None
         } else {
             reference_context_item
