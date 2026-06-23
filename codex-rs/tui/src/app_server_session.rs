@@ -79,6 +79,8 @@ use codex_app_server_protocol::ThreadMemoryModeSetResponse;
 use codex_app_server_protocol::ThreadMetadataGitInfoUpdateParams;
 use codex_app_server_protocol::ThreadMetadataUpdateParams;
 use codex_app_server_protocol::ThreadMetadataUpdateResponse;
+use codex_app_server_protocol::ThreadPersistentNoteSetParams;
+use codex_app_server_protocol::ThreadPersistentNoteSetResponse;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadResumeParams;
@@ -119,6 +121,7 @@ use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffortPreset;
+use codex_protocol::protocol::PersistentUserNoteUpdate;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::eyre::ContextCompat;
 use color_eyre::eyre::Result;
@@ -983,6 +986,26 @@ impl AppServerSession {
             })
             .await
             .wrap_err("thread/compact/start failed in TUI")?;
+        Ok(())
+    }
+
+    pub(crate) async fn thread_persistent_note_set(
+        &mut self,
+        thread_id: ThreadId,
+        update: PersistentUserNoteUpdate,
+    ) -> Result<()> {
+        let request_id = self.next_request_id();
+        let _: ThreadPersistentNoteSetResponse = self
+            .client
+            .request_typed(ClientRequest::ThreadPersistentNoteSet {
+                request_id,
+                params: ThreadPersistentNoteSetParams {
+                    thread_id: thread_id.to_string(),
+                    update,
+                },
+            })
+            .await
+            .wrap_err("thread/persistentNote/set failed in TUI")?;
         Ok(())
     }
 

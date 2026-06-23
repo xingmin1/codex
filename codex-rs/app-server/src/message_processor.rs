@@ -1151,6 +1151,11 @@ impl MessageProcessor {
                     .thread_compact_start(&request_id, params)
                     .await
             }
+            ClientRequest::ThreadPersistentNoteSet { params, .. } => {
+                self.thread_processor
+                    .thread_persistent_note_set(&request_id, params)
+                    .await
+            }
             ClientRequest::ThreadBackgroundTerminalsClean { params, .. } => {
                 self.thread_processor
                     .thread_background_terminals_clean(&request_id, params)

@@ -8,6 +8,7 @@ pub(super) struct RolloutReconstruction {
     pub(super) history: Vec<ResponseItem>,
     pub(super) previous_turn_settings: Option<PreviousTurnSettings>,
     pub(super) reference_context_item: Option<TurnContextItem>,
+    pub(super) persistent_user_note: Option<PersistentUserNoteState>,
     pub(super) window_id: u64,
 }
 
@@ -104,6 +105,8 @@ impl Session {
         let mut base_replacement_history: Option<&[ResponseItem]> = None;
         let mut previous_turn_settings = None;
         let mut reference_context_item = TurnReferenceContextItem::NeverSet;
+        let mut persistent_user_note: Option<PersistentUserNoteState> = None;
+        let mut persistent_user_note_seen = false;
         let mut window_id = None;
         // Rollback is "drop the newest N user turns". While scanning in reverse, that becomes
         // "skip the next N user-turn segments we finalize".
@@ -215,6 +218,13 @@ impl Session {
                         );
                     }
                 }
+                RolloutItem::PersistentUserNote(note) => {
+                    if !persistent_user_note_seen {
+                        persistent_user_note_seen = true;
+                        persistent_user_note =
+                            (!note.text.trim().is_empty()).then_some(note.clone());
+                    }
+                }
                 RolloutItem::ResponseItem(response_item) => {
                     let active_segment =
                         active_segment.get_or_insert_with(ActiveReplaySegment::default);
@@ -310,6 +320,7 @@ impl Session {
                 }
                 RolloutItem::EventMsg(_)
                 | RolloutItem::TurnContext(_)
+                | RolloutItem::PersistentUserNote(_)
                 | RolloutItem::SessionMeta(_) => {}
             }
         }
@@ -330,6 +341,7 @@ impl Session {
             history: history.raw_items().to_vec(),
             previous_turn_settings,
             reference_context_item,
+            persistent_user_note,
             window_id: window_id.unwrap_or(fallback_window_id),
         }
     }

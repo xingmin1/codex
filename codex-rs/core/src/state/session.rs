@@ -14,6 +14,7 @@ use crate::context_manager::ContextManager;
 use crate::session::PreviousTurnSettings;
 use crate::session::session::SessionConfiguration;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
+use codex_protocol::protocol::PersistentUserNoteState;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
@@ -36,6 +37,7 @@ pub(crate) struct SessionState {
     auto_compact_window: AutoCompactWindow,
     /// Startup prewarmed session prepared during session initialization.
     pub(crate) startup_prewarm: Option<SessionStartupPrewarmHandle>,
+    persistent_user_note: Option<PersistentUserNoteState>,
     pub(crate) active_connector_selection: HashSet<String>,
     pub(crate) pending_session_start_sources: VecDeque<codex_hooks::SessionStartSource>,
     granted_permissions_by_environment_id: HashMap<String, AdditionalPermissionProfile>,
@@ -56,6 +58,7 @@ impl SessionState {
             previous_turn_settings: None,
             auto_compact_window: AutoCompactWindow::new(),
             startup_prewarm: None,
+            persistent_user_note: None,
             active_connector_selection: HashSet::new(),
             pending_session_start_sources: VecDeque::new(),
             granted_permissions_by_environment_id: HashMap::new(),
@@ -117,6 +120,22 @@ impl SessionState {
 
     pub(crate) fn reference_context_item(&self) -> Option<TurnContextItem> {
         self.history.reference_context_item()
+    }
+
+    /// Stores a persistent note update and invalidates the context baseline.
+    pub(crate) fn set_persistent_user_note(&mut self, note: Option<PersistentUserNoteState>) {
+        self.persistent_user_note = note;
+        self.history.set_reference_context_item(None);
+    }
+
+    /// Restores a persistent note from rollout replay without emitting a context diff.
+    pub(crate) fn hydrate_persistent_user_note(&mut self, note: Option<PersistentUserNoteState>) {
+        self.persistent_user_note = note;
+    }
+
+    /// Returns the persistent note held in session state.
+    pub(crate) fn persistent_user_note(&self) -> Option<PersistentUserNoteState> {
+        self.persistent_user_note.clone()
     }
 
     // Token/rate limit helpers

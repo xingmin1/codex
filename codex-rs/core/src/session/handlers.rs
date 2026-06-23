@@ -33,6 +33,7 @@ use codex_protocol::protocol::GuardianAssessmentStatus;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::McpServerRefreshConfig;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::PersistentUserNoteUpdate;
 use codex_protocol::protocol::RealtimeConversationListVoicesResponseEvent;
 use codex_protocol::protocol::RealtimeVoicesList;
 use codex_protocol::protocol::ReviewDecision;
@@ -447,6 +448,31 @@ pub async fn compact(sess: &Arc<Session>, sub_id: String) {
         .await;
 }
 
+pub async fn set_persistent_user_note(
+    sess: &Arc<Session>,
+    sub_id: String,
+    update: PersistentUserNoteUpdate,
+) {
+    if let Err(err) = sess.apply_persistent_user_note_update(update).await {
+        sess.send_event_raw(Event {
+            id: sub_id,
+            msg: EventMsg::Error(err.to_error_event(/*message_prefix*/ None)),
+        })
+        .await;
+        return;
+    }
+
+    if let Err(err) = sess.flush_rollout().await {
+        sess.send_event_raw(Event {
+            id: sub_id,
+            msg: EventMsg::Warning(WarningEvent {
+                message: format!("Persistent note was updated, but failed to flush rollout: {err}"),
+            }),
+        })
+        .await;
+    }
+}
+
 pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32) {
     if num_turns == 0 {
         sess.send_event_raw(Event {
@@ -792,6 +818,10 @@ pub(super) async fn submission_loop(
                 }
                 Op::Compact => {
                     compact(&sess, sub.id.clone()).await;
+                    false
+                }
+                Op::SetPersistentUserNote { update } => {
+                    set_persistent_user_note(&sess, sub.id.clone(), update).await;
                     false
                 }
                 Op::ThreadRollback { num_turns } => {

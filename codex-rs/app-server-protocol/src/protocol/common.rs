@@ -579,6 +579,11 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadCompactStartResponse,
     },
+    ThreadPersistentNoteSet => "thread/persistentNote/set" {
+        params: v2::ThreadPersistentNoteSetParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadPersistentNoteSetResponse,
+    },
     ThreadShellCommand => "thread/shellCommand" {
         params: v2::ThreadShellCommandParams,
         serialization: thread_id(params.thread_id),
@@ -1924,6 +1929,22 @@ mod tests {
             thread_goal_set.serialization_scope(),
             Some(ClientRequestSerializationScope::Thread {
                 thread_id: "goal-thread".to_string()
+            })
+        );
+
+        let thread_persistent_note_set = ClientRequest::ThreadPersistentNoteSet {
+            request_id: request_id(),
+            params: v2::ThreadPersistentNoteSetParams {
+                thread_id: "note-thread".to_string(),
+                update: codex_protocol::protocol::PersistentUserNoteUpdate::Set {
+                    text: "remember compact state".to_string(),
+                },
+            },
+        };
+        assert_eq!(
+            thread_persistent_note_set.serialization_scope(),
+            Some(ClientRequestSerializationScope::Thread {
+                thread_id: "note-thread".to_string()
             })
         );
 
@@ -3317,6 +3338,24 @@ mod tests {
         );
         assert_eq!(
             crate::experimental_api::ExperimentalApi::experimental_reason(&clear_request),
+            None
+        );
+    }
+
+    #[test]
+    fn thread_persistent_note_method_is_not_marked_experimental() {
+        let request = ClientRequest::ThreadPersistentNoteSet {
+            request_id: RequestId::Integer(1),
+            params: v2::ThreadPersistentNoteSetParams {
+                thread_id: "thr_123".to_string(),
+                update: codex_protocol::protocol::PersistentUserNoteUpdate::Set {
+                    text: "remember compact state".to_string(),
+                },
+            },
+        };
+
+        assert_eq!(
+            crate::experimental_api::ExperimentalApi::experimental_reason(&request),
             None
         );
     }

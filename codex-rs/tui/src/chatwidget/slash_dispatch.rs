@@ -14,6 +14,7 @@ use crate::bottom_pane::slash_commands::SlashCommandItem;
 use crate::bottom_pane::slash_commands::find_slash_command;
 use crate::goal_display::GOAL_USAGE;
 use crate::goal_files::GoalDraft;
+use codex_protocol::protocol::PersistentUserNoteUpdate;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SlashCommandDispatchSource {
@@ -35,6 +36,8 @@ const SIDE_STARTING_CONTEXT_LABEL: &str = "Side starting...";
 const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
     "Press Ctrl+C to return to the main thread first.";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
+const NOTE_USAGE: &str =
+    "Usage: /note <text> | /note edit <text> | /note pause | /note resume | /note clear";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
 
@@ -284,6 +287,9 @@ impl ChatWidget {
                         Some(GOAL_USAGE_HINT.to_string()),
                     );
                 }
+            }
+            SlashCommand::Note => {
+                self.add_info_message(NOTE_USAGE.to_string(), None);
             }
             SlashCommand::Side | SlashCommand::Btw => {
                 self.request_empty_side_conversation(cmd);
@@ -838,6 +844,20 @@ impl ChatWidget {
                     self.clear_live_goal_submission();
                 }
             }
+            SlashCommand::Note if !trimmed.is_empty() => {
+                let update = match persistent_note_update_from_args(&args) {
+                    Ok(update) => update,
+                    Err(message) => {
+                        self.add_error_message(message);
+                        if source == SlashCommandDispatchSource::Live {
+                            self.bottom_pane.drain_pending_submission_state();
+                        }
+                        return;
+                    }
+                };
+                self.submit_op(AppCommand::set_persistent_user_note(update));
+                self.append_message_history_entry(format!("/note {trimmed}"));
+            }
             SlashCommand::Side | SlashCommand::Btw if !trimmed.is_empty() => {
                 let Some(parent_thread_id) = self.thread_id else {
                     let command = cmd.command();
@@ -1063,6 +1083,7 @@ impl ChatWidget {
             | SlashCommand::Personality
             | SlashCommand::Plan
             | SlashCommand::Goal
+            | SlashCommand::Note
             | SlashCommand::Side
             | SlashCommand::Btw
             | SlashCommand::Keymap
@@ -1136,5 +1157,50 @@ impl ChatWidget {
         ));
         self.bottom_pane.drain_pending_submission_state();
         false
+    }
+}
+
+fn persistent_note_update_from_args(args: &str) -> Result<PersistentUserNoteUpdate, String> {
+    let trimmed = args.trim();
+    if trimmed.is_empty() {
+        return Err(NOTE_USAGE.to_string());
+    }
+
+    let Some((first, rest)) = trimmed.split_once(char::is_whitespace) else {
+        return match trimmed.to_ascii_lowercase().as_str() {
+            "clear" => Ok(PersistentUserNoteUpdate::Clear),
+            "pause" => Ok(PersistentUserNoteUpdate::Pause),
+            "resume" => Ok(PersistentUserNoteUpdate::Resume),
+            _ => Ok(PersistentUserNoteUpdate::Set {
+                text: trimmed.to_string(),
+            }),
+        };
+    };
+
+    match first.to_ascii_lowercase().as_str() {
+        "edit" => {
+            let text = rest.trim();
+            if text.is_empty() {
+                Err(NOTE_USAGE.to_string())
+            } else {
+                Ok(PersistentUserNoteUpdate::Edit {
+                    text: text.to_string(),
+                })
+            }
+        }
+        "set" => {
+            let text = rest.trim();
+            if text.is_empty() {
+                Err(NOTE_USAGE.to_string())
+            } else {
+                Ok(PersistentUserNoteUpdate::Set {
+                    text: text.to_string(),
+                })
+            }
+        }
+        "clear" | "pause" | "resume" => Err(NOTE_USAGE.to_string()),
+        _ => Ok(PersistentUserNoteUpdate::Set {
+            text: trimmed.to_string(),
+        }),
     }
 }

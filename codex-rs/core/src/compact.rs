@@ -306,6 +306,9 @@ async fn run_compact_task_inner_impl(
         let initial_context = sess.build_initial_context(turn_context.as_ref()).await;
         new_history =
             insert_initial_context_before_last_real_user_or_summary(new_history, initial_context);
+    } else {
+        let note_item = sess.persistent_user_note_context_item().await;
+        new_history = insert_persistent_user_note_before_summary(new_history, note_item);
     }
     let reference_context_item = match initial_context_injection {
         InitialContextInjection::DoNotInject => None,
@@ -531,6 +534,30 @@ pub(crate) fn build_compacted_history(
         summary_text,
         COMPACT_USER_MESSAGE_MAX_TOKENS,
     )
+}
+
+/// Inserts the persistent note before a compact summary so the summary remains last.
+pub(crate) fn insert_persistent_user_note_before_summary(
+    mut compacted_history: Vec<ResponseItem>,
+    note_item: Option<ResponseItem>,
+) -> Vec<ResponseItem> {
+    let Some(note_item) = note_item else {
+        return compacted_history;
+    };
+    let insertion_index = compacted_history
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, item)| {
+            let Some(TurnItem::UserMessage(user)) = crate::event_mapping::parse_turn_item(item)
+            else {
+                return None;
+            };
+            is_summary_message(&user.message()).then_some(i)
+        })
+        .unwrap_or(compacted_history.len());
+    compacted_history.insert(insertion_index, note_item);
+    compacted_history
 }
 
 fn build_compacted_history_with_limit(

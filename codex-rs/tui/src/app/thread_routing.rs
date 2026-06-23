@@ -663,6 +663,12 @@ impl App {
                 app_server.thread_compact_start(thread_id).await?;
                 Ok(true)
             }
+            AppCommand::SetPersistentUserNote { update } => {
+                app_server
+                    .thread_persistent_note_set(thread_id, update.clone())
+                    .await?;
+                Ok(true)
+            }
             AppCommand::SetThreadName { name } => {
                 app_server
                     .thread_set_name(thread_id, name.to_string())

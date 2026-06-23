@@ -113,6 +113,9 @@ use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::MultiAgentVersion;
+use codex_protocol::protocol::PersistentUserNoteState;
+use codex_protocol::protocol::PersistentUserNoteStatus;
+use codex_protocol::protocol::PersistentUserNoteUpdate;
 use codex_protocol::protocol::RawResponseItemEvent;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::RolloutItem;
@@ -226,6 +229,9 @@ use self::session::AppServerClientMetadata;
 use self::session::Session;
 use self::session::SessionConfiguration;
 pub(crate) use self::session::SessionSettingsUpdate;
+
+const MAX_PERSISTENT_USER_NOTE_CHARS: usize = 65_536;
+
 #[cfg(test)]
 use self::turn::AssistantMessageStreamParsers;
 #[cfg(test)]
@@ -1325,6 +1331,7 @@ impl Session {
             mut history,
             previous_turn_settings,
             reference_context_item,
+            persistent_user_note,
             window_id,
         } = self
             .reconstruct_history_from_rollout(turn_context, rollout_items)
@@ -1341,6 +1348,7 @@ impl Session {
             state.replace_history(history, reference_context_item);
             state.set_auto_compact_window_id(window_id);
             state.set_previous_turn_settings(previous_turn_settings.clone());
+            state.hydrate_persistent_user_note(persistent_user_note);
         }
         let prefix_tokens = if matches!(
             turn_context.config.model_auto_compact_token_limit_scope,
@@ -1357,6 +1365,79 @@ impl Session {
                 .await;
         }
         previous_turn_settings
+    }
+
+    /// Applies a user-requested persistent note update and records the resulting state.
+    pub(crate) async fn apply_persistent_user_note_update(
+        &self,
+        update: PersistentUserNoteUpdate,
+    ) -> CodexResult<PersistentUserNoteState> {
+        let current = {
+            let state = self.state.lock().await;
+            state.persistent_user_note()
+        };
+        let next = match update {
+            PersistentUserNoteUpdate::Set { text } | PersistentUserNoteUpdate::Edit { text } => {
+                let text = normalize_persistent_user_note_text(text)?;
+                Some(PersistentUserNoteState {
+                    text,
+                    status: PersistentUserNoteStatus::Active,
+                })
+            }
+            PersistentUserNoteUpdate::Clear => None,
+            PersistentUserNoteUpdate::Pause => {
+                let mut note = current.ok_or_else(|| {
+                    CodexErr::InvalidRequest(
+                        "persistent user note does not exist; set it before pausing".to_string(),
+                    )
+                })?;
+                note.status = PersistentUserNoteStatus::Paused;
+                Some(note)
+            }
+            PersistentUserNoteUpdate::Resume => {
+                let mut note = current.ok_or_else(|| {
+                    CodexErr::InvalidRequest(
+                        "persistent user note does not exist; set it before resuming".to_string(),
+                    )
+                })?;
+                note.status = PersistentUserNoteStatus::Active;
+                Some(note)
+            }
+        };
+
+        {
+            let mut state = self.state.lock().await;
+            state.set_persistent_user_note(next.clone());
+        }
+        self.persist_rollout_items(&[RolloutItem::PersistentUserNote(
+            next.clone().unwrap_or_else(|| PersistentUserNoteState {
+                text: String::new(),
+                status: PersistentUserNoteStatus::Paused,
+            }),
+        )])
+        .await;
+
+        Ok(next.unwrap_or_else(|| PersistentUserNoteState {
+            text: String::new(),
+            status: PersistentUserNoteStatus::Paused,
+        }))
+    }
+
+    /// Returns the currently configured persistent user note, if any.
+    pub(crate) async fn persistent_user_note(&self) -> Option<PersistentUserNoteState> {
+        let state = self.state.lock().await;
+        state.persistent_user_note()
+    }
+
+    /// Renders the active persistent note as a contextual user message.
+    pub(crate) async fn persistent_user_note_context_item(&self) -> Option<ResponseItem> {
+        let note = self.persistent_user_note().await?;
+        if note.status != PersistentUserNoteStatus::Active || note.text.trim().is_empty() {
+            return None;
+        }
+        Some(ContextualUserFragment::into(
+            crate::context::PersistentUserNote::new(note.text),
+        ))
     }
 
     async fn set_auto_compact_window_estimated_prefill_for_scope(
@@ -2854,6 +2935,7 @@ impl Session {
             base_instructions,
             session_source,
             auto_compact_window_id,
+            persistent_user_note,
         ) = {
             let state = self.state.lock().await;
             (
@@ -2863,6 +2945,7 @@ impl Session {
                 state.session_configuration.base_instructions.clone(),
                 state.session_configuration.session_source.clone(),
                 state.auto_compact_window_id(),
+                state.persistent_user_note(),
             )
         };
         if let Some(model_switch_message) =
@@ -3004,6 +3087,13 @@ impl Session {
         }
         if let Some(user_instructions) = turn_context.user_instructions.as_deref() {
             contextual_user_sections.push(user_instructions.to_string());
+        }
+        if let Some(note) = persistent_user_note
+            && note.status == PersistentUserNoteStatus::Active
+            && !note.text.trim().is_empty()
+        {
+            contextual_user_sections
+                .push(crate::context::PersistentUserNote::new(note.text).render());
         }
         // This is full-context metadata. Steady-state context diffs should not re-emit it.
         if turn_context.features.enabled(Feature::TokenBudget)
@@ -3577,6 +3667,21 @@ async fn build_hooks_for_config(
         shell_program: Some(hook_shell_program),
         shell_args: hook_shell_argv,
     })
+}
+
+fn normalize_persistent_user_note_text(text: String) -> CodexResult<String> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err(CodexErr::InvalidRequest(
+            "persistent user note must not be empty".to_string(),
+        ));
+    }
+    if text.chars().count() > MAX_PERSISTENT_USER_NOTE_CHARS {
+        return Err(CodexErr::InvalidRequest(format!(
+            "persistent user note must be at most {MAX_PERSISTENT_USER_NOTE_CHARS} characters"
+        )));
+    }
+    Ok(text)
 }
 
 #[cfg(test)]

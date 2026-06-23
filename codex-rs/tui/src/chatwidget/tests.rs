@@ -242,6 +242,7 @@ pub(crate) mod helpers;
 mod history_replay;
 mod mcp_startup;
 mod permissions;
+mod persistent_note;
 mod plan_mode;
 mod popups_and_settings;
 mod review_mode;

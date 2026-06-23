@@ -54,6 +54,8 @@ use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::protocol::NonSteerableTurnKind;
+use codex_protocol::protocol::PersistentUserNoteStatus;
+use codex_protocol::protocol::PersistentUserNoteUpdate;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::request_permissions::PermissionGrantScope;
@@ -7445,6 +7447,61 @@ async fn build_initial_context_uses_previous_realtime_state() {
             .any(|text| text.contains("<realtime_conversation>")),
         "did not expect a duplicate realtime update, got {resumed_developer_texts:?}"
     );
+}
+
+#[tokio::test]
+async fn persistent_user_note_update_controls_initial_context_injection() {
+    let (session, turn_context) = make_session_and_context().await;
+
+    let note = session
+        .apply_persistent_user_note_update(PersistentUserNoteUpdate::Set {
+            text: "remember q09".to_string(),
+        })
+        .await
+        .expect("set note");
+    assert_eq!(note.status, PersistentUserNoteStatus::Active);
+
+    let initial_context = session.build_initial_context(&turn_context).await;
+    assert!(
+        user_input_texts(&initial_context)
+            .iter()
+            .any(|text| text.contains("<codex_persistent_user_note>")
+                && text.contains("remember q09"))
+    );
+
+    session
+        .apply_persistent_user_note_update(PersistentUserNoteUpdate::Pause)
+        .await
+        .expect("pause note");
+    let initial_context = session.build_initial_context(&turn_context).await;
+    assert!(
+        user_input_texts(&initial_context)
+            .iter()
+            .all(|text| !text.contains("<codex_persistent_user_note>"))
+    );
+
+    session
+        .apply_persistent_user_note_update(PersistentUserNoteUpdate::Resume)
+        .await
+        .expect("resume note");
+    session
+        .apply_persistent_user_note_update(PersistentUserNoteUpdate::Edit {
+            text: "updated reminder".to_string(),
+        })
+        .await
+        .expect("edit note");
+    let initial_context = session.build_initial_context(&turn_context).await;
+    assert!(
+        user_input_texts(&initial_context)
+            .iter()
+            .any(|text| text.contains("updated reminder"))
+    );
+
+    session
+        .apply_persistent_user_note_update(PersistentUserNoteUpdate::Clear)
+        .await
+        .expect("clear note");
+    assert!(session.persistent_user_note().await.is_none());
 }
 
 async fn make_multi_agent_v2_usage_hint_test_session(

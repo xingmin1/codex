@@ -2,6 +2,7 @@ use super::*;
 use crate::context::ContextualUserFragment;
 use crate::context::InternalContextSource;
 use crate::context::InternalModelContextFragment;
+use crate::context::PersistentUserNote;
 use crate::context::SubagentNotification;
 use codex_protocol::items::HookPromptFragment;
 use codex_protocol::items::build_hook_prompt_message;
@@ -70,6 +71,16 @@ fn detects_internal_model_context_fragment() {
         text,
         "<codex_internal_context source=\"extension\">\nInternal steering.\n</codex_internal_context>"
     );
+    assert!(is_contextual_user_fragment(&ContentItem::InputText {
+        text
+    }));
+}
+
+#[test]
+fn detects_persistent_user_note_fragment() {
+    let text = PersistentUserNote::new("Keep the q09 invariant in mind.").render();
+
+    assert!(text.contains("<codex_persistent_user_note>"));
     assert!(is_contextual_user_fragment(&ContentItem::InputText {
         text
     }));

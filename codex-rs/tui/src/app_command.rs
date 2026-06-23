@@ -17,6 +17,7 @@ use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
+use codex_protocol::protocol::PersistentUserNoteUpdate;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use serde::Serialize;
 use serde_json::Value;
@@ -89,6 +90,9 @@ pub(crate) enum AppCommand {
         force_reload: bool,
     },
     Compact,
+    SetPersistentUserNote {
+        update: PersistentUserNoteUpdate,
+    },
     SetThreadName {
         name: String,
     },
@@ -245,6 +249,10 @@ impl AppCommand {
 
     pub(crate) fn compact() -> Self {
         Self::Compact
+    }
+
+    pub(crate) fn set_persistent_user_note(update: PersistentUserNoteUpdate) -> Self {
+        Self::SetPersistentUserNote { update }
     }
 
     pub(crate) fn set_thread_name(name: String) -> Self {

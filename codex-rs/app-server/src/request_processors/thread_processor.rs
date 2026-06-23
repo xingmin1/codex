@@ -562,6 +562,16 @@ impl ThreadRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
+    pub(crate) async fn thread_persistent_note_set(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: ThreadPersistentNoteSetParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        self.thread_persistent_note_set_inner(request_id, params)
+            .await
+            .map(|response| Some(response.into()))
+    }
+
     pub(crate) async fn thread_background_terminals_clean(
         &self,
         request_id: &ConnectionRequestId,
@@ -1741,6 +1751,24 @@ impl ThreadRequestProcessor {
             .await
             .map_err(|err| internal_error(format!("failed to start compaction: {err}")))?;
         Ok(ThreadCompactStartResponse {})
+    }
+
+    async fn thread_persistent_note_set_inner(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: ThreadPersistentNoteSetParams,
+    ) -> Result<ThreadPersistentNoteSetResponse, JSONRPCErrorError> {
+        let ThreadPersistentNoteSetParams { thread_id, update } = params;
+
+        let (_, thread) = self.load_thread(&thread_id).await?;
+        self.submit_core_op(
+            request_id,
+            thread.as_ref(),
+            Op::SetPersistentUserNote { update },
+        )
+        .await
+        .map_err(|err| internal_error(format!("failed to update persistent note: {err}")))?;
+        Ok(ThreadPersistentNoteSetResponse {})
     }
 
     async fn thread_background_terminals_clean_inner(

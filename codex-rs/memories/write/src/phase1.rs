@@ -412,6 +412,7 @@ mod job {
                 }
                 RolloutItem::SessionMeta(_)
                 | RolloutItem::Compacted(_)
+                | RolloutItem::PersistentUserNote(_)
                 | RolloutItem::TurnContext(_)
                 | RolloutItem::EventMsg(_) => None,
             })

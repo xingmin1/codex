@@ -2,6 +2,7 @@ use super::*;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
+use codex_protocol::protocol::PersistentUserNoteUpdate;
 use pretty_assertions::assert_eq;
 
 async fn process_compacted_history_with_test_session(
@@ -21,6 +22,31 @@ async fn process_compacted_history_with_test_session(
     )
     .await;
     (refreshed, initial_context)
+}
+
+async fn process_compacted_history_with_note(
+    compacted_history: Vec<ResponseItem>,
+    update: PersistentUserNoteUpdate,
+) -> Vec<ResponseItem> {
+    let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+    session
+        .apply_persistent_user_note_update(update)
+        .await
+        .expect("persistent note update should succeed");
+    crate::compact_remote::process_compacted_history(
+        &session,
+        &turn_context,
+        compacted_history,
+        InitialContextInjection::DoNotInject,
+    )
+    .await
+}
+
+fn response_item_text(item: &ResponseItem) -> Option<String> {
+    match item {
+        ResponseItem::Message { content, .. } => content_items_to_text(content),
+        _ => None,
+    }
 }
 
 fn user_message(text: &str) -> ResponseItem {
@@ -512,6 +538,67 @@ async fn process_compacted_history_reinjects_model_switch_message() {
         phase: None,
     });
     assert_eq!(refreshed, expected);
+}
+
+#[tokio::test]
+async fn process_compacted_history_reinserts_persistent_note_before_summary() {
+    let compacted_history = vec![ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: format!("{SUMMARY_PREFIX}\nsummary text"),
+        }],
+        phase: None,
+    }];
+
+    let refreshed = process_compacted_history_with_note(
+        compacted_history,
+        PersistentUserNoteUpdate::Set {
+            text: "remember q09".to_string(),
+        },
+    )
+    .await;
+
+    let note_text = response_item_text(&refreshed[0]).expect("note text");
+    let summary_text = response_item_text(&refreshed[1]).expect("summary text");
+    assert!(note_text.contains("<codex_persistent_user_note>"));
+    assert!(note_text.contains("remember q09"));
+    assert!(summary_text.contains("summary text"));
+}
+
+#[tokio::test]
+async fn process_compacted_history_omits_paused_persistent_note() {
+    let compacted_history = vec![user_message(&format!("{SUMMARY_PREFIX}\nsummary text"))];
+
+    let refreshed = process_compacted_history_with_note(
+        compacted_history.clone(),
+        PersistentUserNoteUpdate::Set {
+            text: "remember q09".to_string(),
+        },
+    )
+    .await;
+    assert_eq!(refreshed.len(), 2);
+
+    let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+    session
+        .apply_persistent_user_note_update(PersistentUserNoteUpdate::Set {
+            text: "remember q09".to_string(),
+        })
+        .await
+        .expect("set note");
+    session
+        .apply_persistent_user_note_update(PersistentUserNoteUpdate::Pause)
+        .await
+        .expect("pause note");
+    let refreshed = crate::compact_remote::process_compacted_history(
+        &session,
+        &turn_context,
+        compacted_history.clone(),
+        InitialContextInjection::DoNotInject,
+    )
+    .await;
+
+    assert_eq!(refreshed, compacted_history);
 }
 
 #[test]

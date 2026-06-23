@@ -312,7 +312,19 @@ pub(crate) async fn process_compacted_history(
     };
 
     compacted_history.retain(should_keep_compacted_history_item);
-    insert_initial_context_before_last_real_user_or_summary(compacted_history, initial_context)
+    let mut compacted_history =
+        insert_initial_context_before_last_real_user_or_summary(compacted_history, initial_context);
+    if matches!(
+        initial_context_injection,
+        InitialContextInjection::DoNotInject
+    ) {
+        let note_item = sess.persistent_user_note_context_item().await;
+        compacted_history = crate::compact::insert_persistent_user_note_before_summary(
+            compacted_history,
+            note_item,
+        );
+    }
+    compacted_history
 }
 
 /// Returns whether an item from remote compaction output should be preserved.

@@ -615,6 +615,12 @@ pub enum Op {
     /// to generate a summary which will be returned as an AgentMessage event.
     Compact,
 
+    /// Set or mutate the user-pinned note that Codex reinserts after context compaction.
+    SetPersistentUserNote {
+        /// Requested note mutation.
+        update: PersistentUserNoteUpdate,
+    },
+
     /// Set whether the thread remains eligible for memory generation.
     ///
     /// This persists thread-level memory mode metadata without involving the
@@ -776,6 +782,7 @@ impl Op {
             Self::RefreshMcpServers { .. } => "refresh_mcp_servers",
             Self::ReloadUserConfig => "reload_user_config",
             Self::Compact => "compact",
+            Self::SetPersistentUserNote { .. } => "set_persistent_user_note",
             Self::SetThreadMemoryMode { .. } => "set_thread_memory_mode",
             Self::ThreadRollback { .. } => "thread_rollback",
             Self::Review { .. } => "review",
@@ -2815,6 +2822,7 @@ fn multi_agent_version_from_items(
             RolloutItem::SessionMeta(_)
             | RolloutItem::ResponseItem(_)
             | RolloutItem::InterAgentCommunication(_)
+            | RolloutItem::PersistentUserNote(_)
             | RolloutItem::Compacted(_)
             | RolloutItem::EventMsg(_) => None,
         })
@@ -2912,9 +2920,33 @@ pub enum RolloutItem {
     ResponseItem(ResponseItem),
     /// Durable delivery metadata reconstructed as a model-visible `agent_message`.
     InterAgentCommunication(InterAgentCommunication),
+    PersistentUserNote(PersistentUserNoteState),
     Compacted(CompactedItem),
     TurnContext(TurnContextItem),
     EventMsg(EventMsg),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistentUserNoteStatus {
+    Active,
+    Paused,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistentUserNoteUpdate {
+    Set { text: String },
+    Edit { text: String },
+    Clear,
+    Pause,
+    Resume,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+pub struct PersistentUserNoteState {
+    pub text: String,
+    pub status: PersistentUserNoteStatus,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]

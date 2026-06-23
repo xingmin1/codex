@@ -17,6 +17,7 @@ mod legacy_unified_exec_process_limit_warning;
 mod model_switch_instructions;
 mod network_rule_saved;
 mod permissions_instructions;
+mod persistent_user_note;
 mod personality_spec_instructions;
 mod plugin_instructions;
 mod realtime_end_instructions;
@@ -55,6 +56,7 @@ pub(crate) use legacy_unified_exec_process_limit_warning::LegacyUnifiedExecProce
 pub(crate) use model_switch_instructions::ModelSwitchInstructions;
 pub(crate) use network_rule_saved::NetworkRuleSaved;
 pub use permissions_instructions::PermissionsInstructions;
+pub(crate) use persistent_user_note::PersistentUserNote;
 pub(crate) use personality_spec_instructions::PersonalitySpecInstructions;
 pub(crate) use plugin_instructions::PluginInstructions;
 pub(crate) use realtime_end_instructions::RealtimeEndInstructions;
