@@ -202,6 +202,7 @@ mod tests {
             agent_role: None,
             git_info: None,
             name: None,
+            persistent_user_note: None,
             turns: vec![Turn {
                 id: "turn-1".to_string(),
                 items,

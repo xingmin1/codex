@@ -2613,6 +2613,7 @@ mod tests {
                     agent_role: None,
                     git_info: None,
                     name: None,
+                    persistent_user_note: None,
                     turns: Vec::new(),
                 },
                 model: "gpt-5".to_string(),

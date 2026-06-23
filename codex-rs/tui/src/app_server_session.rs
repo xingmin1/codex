@@ -1591,6 +1591,7 @@ async fn thread_session_state_from_thread_start_response(
         response.runtime_workspace_roots.clone(),
         response.instruction_source_path_uris(),
         response.reasoning_effort.clone(),
+        response.thread.persistent_user_note.clone(),
         config,
     )
     .await
@@ -1632,6 +1633,7 @@ async fn thread_session_state_from_thread_resume_response(
         response.runtime_workspace_roots.clone(),
         response.instruction_source_path_uris(),
         response.reasoning_effort.clone(),
+        response.thread.persistent_user_note.clone(),
         config,
     )
     .await
@@ -1664,6 +1666,7 @@ async fn thread_session_state_from_thread_fork_response(
         response.runtime_workspace_roots.clone(),
         response.instruction_source_path_uris(),
         response.reasoning_effort.clone(),
+        response.thread.persistent_user_note.clone(),
         config,
     )
     .await
@@ -1703,6 +1706,7 @@ async fn thread_session_state_from_thread_response(
     runtime_workspace_roots: Vec<AbsolutePathBuf>,
     instruction_source_paths: Vec<PathUri>,
     reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+    persistent_user_note: Option<codex_protocol::protocol::PersistentUserNoteState>,
     config: &Config,
 ) -> Result<ThreadSessionState, String> {
     let thread_id = ThreadId::from_string(thread_id)
@@ -1739,6 +1743,7 @@ async fn thread_session_state_from_thread_response(
         }),
         network_proxy: None,
         rollout_path,
+        persistent_user_note,
     })
 }
 
@@ -2362,6 +2367,7 @@ mod tests {
                 agent_role: None,
                 git_info: None,
                 name: None,
+                persistent_user_note: None,
                 turns: vec![Turn {
                     id: "turn-1".to_string(),
                     items_view: codex_app_server_protocol::TurnItemsView::Full,
@@ -2539,6 +2545,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             /*reasoning_effort*/ None,
+            /*persistent_user_note*/ None,
             &config,
         )
         .await
@@ -2574,6 +2581,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             /*reasoning_effort*/ None,
+            /*persistent_user_note*/ None,
             &config,
         )
         .await

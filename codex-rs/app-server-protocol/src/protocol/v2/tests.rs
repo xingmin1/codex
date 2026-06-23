@@ -187,6 +187,7 @@ fn thread_resume_response_round_trips_initial_turns_page() {
             agent_role: None,
             git_info: None,
             name: None,
+            persistent_user_note: None,
             turns: Vec::new(),
         },
         model: "gpt-5".to_string(),

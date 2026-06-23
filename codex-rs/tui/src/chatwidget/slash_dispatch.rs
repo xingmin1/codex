@@ -298,7 +298,8 @@ impl ChatWidget {
                 }
             }
             SlashCommand::Note => {
-                self.add_info_message(NOTE_USAGE.to_string(), None);
+                self.show_persistent_note_summary();
+                self.append_message_history_entry("/note".to_string());
             }
             SlashCommand::Side | SlashCommand::Btw => {
                 self.request_empty_side_conversation(cmd);
@@ -855,18 +856,23 @@ impl ChatWidget {
                 }
             }
             SlashCommand::Note if !trimmed.is_empty() => {
-                let update = match persistent_note_update_from_args(&args) {
-                    Ok(update) => update,
-                    Err(message) => {
-                        self.add_error_message(message);
-                        if source == SlashCommandDispatchSource::Live {
-                            self.bottom_pane.drain_pending_submission_state();
+                if trimmed.eq_ignore_ascii_case("edit") {
+                    self.show_persistent_note_edit_prompt();
+                    self.append_message_history_entry("/note edit".to_string());
+                } else {
+                    let update = match persistent_note_update_from_args(&args) {
+                        Ok(update) => update,
+                        Err(message) => {
+                            self.add_error_message(message);
+                            if source == SlashCommandDispatchSource::Live {
+                                self.bottom_pane.drain_pending_submission_state();
+                            }
+                            return;
                         }
-                        return;
-                    }
-                };
-                self.submit_op(AppCommand::set_persistent_user_note(update));
-                self.append_message_history_entry(format!("/note {trimmed}"));
+                    };
+                    self.set_persistent_note_from_ui(update);
+                    self.append_message_history_entry(format!("/note {trimmed}"));
+                }
             }
             SlashCommand::Side | SlashCommand::Btw if !trimmed.is_empty() => {
                 let Some(parent_thread_id) = self.thread_id else {

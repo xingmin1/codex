@@ -303,6 +303,11 @@ pub(crate) enum AppEvent {
         thread_id: ThreadId,
     },
 
+    /// 从交互式提示框应用持久 note 更新。
+    SetPersistentUserNote {
+        update: codex_protocol::protocol::PersistentUserNoteUpdate,
+    },
+
     /// Result of refreshing rate limits.
     RateLimitsLoaded {
         origin: RateLimitRefreshOrigin,

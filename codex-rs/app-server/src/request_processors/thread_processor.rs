@@ -3168,6 +3168,8 @@ impl ThreadRequestProcessor {
         let (mut thread, history) =
             thread_from_stored_thread(stored_thread, fallback_provider, &self.config.cwd);
         if include_turns && let Some(history) = history {
+            thread.persistent_user_note =
+                latest_persistent_user_note_from_rollout_items(&history.items);
             populate_thread_turns_from_history(
                 &mut thread,
                 &history.items,
@@ -3279,8 +3281,10 @@ impl ThreadRequestProcessor {
         thread.id = thread_id.to_string();
         thread.session_id = session_id;
         thread.path = Some(rollout_path.to_path_buf());
+        let history_items = thread_history.get_rollout_items();
+        thread.persistent_user_note =
+            latest_persistent_user_note_from_rollout_items(&history_items);
         if include_turns {
-            let history_items = thread_history.get_rollout_items();
             populate_thread_turns_from_history(
                 &mut thread,
                 &history_items,
@@ -4209,6 +4213,9 @@ pub(crate) fn thread_from_stored_thread(
         thread_source: thread.thread_source.map(Into::into),
         git_info,
         name: thread.name,
+        persistent_user_note: history
+            .as_ref()
+            .and_then(|history| latest_persistent_user_note_from_rollout_items(&history.items)),
         turns: Vec::new(),
     };
     (thread, history)
@@ -4348,6 +4355,19 @@ fn preview_from_rollout_items(items: &[RolloutItem]) -> String {
         .unwrap_or_default()
 }
 
+fn latest_persistent_user_note_from_rollout_items(
+    items: &[RolloutItem],
+) -> Option<codex_protocol::protocol::PersistentUserNoteState> {
+    items
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            RolloutItem::PersistentUserNote(note) => Some(note),
+            _ => None,
+        })
+        .and_then(|note| (!note.text.trim().is_empty()).then_some(note.clone()))
+}
+
 fn requested_permissions_trust_project(overrides: &ConfigOverrides, cwd: &Path) -> bool {
     if matches!(
         overrides.sandbox_mode,
@@ -4415,6 +4435,7 @@ fn build_thread_from_snapshot(
         thread_source: config_snapshot.thread_source.clone().map(Into::into),
         git_info: None,
         name: None,
+        persistent_user_note: None,
         turns: Vec::new(),
     }
 }

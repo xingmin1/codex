@@ -550,6 +550,7 @@ async fn required_windows_sandbox_setup_defers_configured_initial_prompt() {
         message_history: None,
         network_proxy: None,
         rollout_path: Some(PathBuf::new()),
+        persistent_user_note: None,
     });
     drain_insert_history(&mut rx);
 
@@ -959,6 +960,7 @@ async fn permissions_selection_marks_auto_review_current_after_session_configure
         message_history: None,
         network_proxy: None,
         rollout_path: Some(PathBuf::new()),
+        persistent_user_note: None,
     });
 
     chat.open_permissions_popup();
@@ -1009,6 +1011,7 @@ async fn permissions_selection_marks_auto_review_current_with_custom_workspace_w
         message_history: None,
         network_proxy: None,
         rollout_path: Some(PathBuf::new()),
+        persistent_user_note: None,
     });
 
     chat.open_permissions_popup();

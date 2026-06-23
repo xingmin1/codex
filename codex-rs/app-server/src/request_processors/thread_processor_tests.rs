@@ -95,6 +95,47 @@ mod background_terminal_pagination_tests {
     }
 }
 
+mod persistent_user_note_tests {
+    use super::super::latest_persistent_user_note_from_rollout_items;
+    use codex_protocol::protocol::PersistentUserNoteState;
+    use codex_protocol::protocol::PersistentUserNoteStatus;
+    use codex_protocol::protocol::RolloutItem;
+    use pretty_assertions::assert_eq;
+
+    fn note(text: &str, status: PersistentUserNoteStatus) -> RolloutItem {
+        RolloutItem::PersistentUserNote(PersistentUserNoteState {
+            text: text.to_string(),
+            status,
+        })
+    }
+
+    #[test]
+    fn latest_persistent_note_clear_record_hides_older_note() {
+        let items = vec![
+            note("remember q09", PersistentUserNoteStatus::Active),
+            note("", PersistentUserNoteStatus::Paused),
+        ];
+
+        assert_eq!(latest_persistent_user_note_from_rollout_items(&items), None);
+    }
+
+    #[test]
+    fn latest_persistent_note_preserves_paused_non_empty_note() {
+        let items = vec![
+            note("old note", PersistentUserNoteStatus::Active),
+            note("current note", PersistentUserNoteStatus::Paused),
+        ];
+
+        assert_eq!(
+            latest_persistent_user_note_from_rollout_items(&items),
+            Some(PersistentUserNoteState {
+                text: "current note".to_string(),
+                status: PersistentUserNoteStatus::Paused,
+            })
+        );
+    }
+}
+
 mod thread_processor_behavior_tests {
     async fn forked_from_id_from_rollout(path: &Path) -> Option<String> {
         codex_core::read_session_meta_line(path)

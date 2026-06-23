@@ -110,6 +110,7 @@ impl App {
                 message_history: None,
                 network_proxy: None,
                 rollout_path: thread.path.clone(),
+                persistent_user_note: None,
             }
         };
         session.thread_id = thread_id;
@@ -192,6 +193,7 @@ mod tests {
             message_history: None,
             network_proxy: None,
             rollout_path: Some(PathBuf::new()),
+            persistent_user_note: None,
         }
     }
 
@@ -428,6 +430,7 @@ mod tests {
             agent_role: None,
             git_info: None,
             name: Some("read thread".to_string()),
+            persistent_user_note: None,
             turns: Vec::new(),
         };
 

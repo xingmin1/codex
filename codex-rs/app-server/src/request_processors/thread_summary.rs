@@ -333,6 +333,7 @@ pub(crate) fn summary_to_thread(
         thread_source: None,
         git_info,
         name: None,
+        persistent_user_note: None,
         turns: Vec::new(),
     }
 }

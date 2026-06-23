@@ -37,6 +37,7 @@ async fn resumed_initial_messages_render_history() {
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
+        persistent_user_note: None,
     };
 
     chat.handle_thread_session(configured);
@@ -224,6 +225,7 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
+        persistent_user_note: None,
     };
 
     chat.handle_thread_session(configured);
@@ -296,6 +298,7 @@ async fn replayed_user_message_preserves_remote_image_urls() {
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
+        persistent_user_note: None,
     };
 
     chat.handle_thread_session(configured);
@@ -398,6 +401,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         message_history: None,
         network_proxy: None,
         rollout_path: None,
+        persistent_user_note: None,
     };
 
     chat.handle_thread_session(configured);
@@ -471,6 +475,7 @@ async fn session_configured_preserves_profile_workspace_roots() {
         message_history: None,
         network_proxy: None,
         rollout_path: None,
+        persistent_user_note: None,
     };
 
     chat.handle_thread_session(configured);
@@ -518,6 +523,7 @@ async fn session_configured_external_sandbox_keeps_external_runtime_policy() {
         message_history: None,
         network_proxy: None,
         rollout_path: None,
+        persistent_user_note: None,
     };
 
     chat.handle_thread_session(configured);
@@ -559,6 +565,7 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
+        persistent_user_note: None,
     };
 
     chat.handle_thread_session(configured);
@@ -617,6 +624,7 @@ async fn replayed_user_message_with_only_local_images_renders_history_cell() {
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
+        persistent_user_note: None,
     };
 
     chat.handle_thread_session(configured);
@@ -891,6 +899,7 @@ async fn replayed_reasoning_item_hides_raw_reasoning_when_disabled() {
         message_history: None,
         network_proxy: None,
         rollout_path: None,
+        persistent_user_note: None,
     });
     let _ = drain_insert_history(&mut rx);
 
@@ -939,6 +948,7 @@ async fn replayed_reasoning_item_shows_raw_reasoning_when_enabled() {
         message_history: None,
         network_proxy: None,
         rollout_path: None,
+        persistent_user_note: None,
     });
     let _ = drain_insert_history(&mut rx);
 

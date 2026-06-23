@@ -622,6 +622,46 @@ async fn process_compacted_history_reinserts_persistent_note_before_summary() {
 }
 
 #[tokio::test]
+async fn process_compacted_history_includes_persistent_note_in_mid_turn_context() {
+    let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+    session
+        .apply_persistent_user_note_update(PersistentUserNoteUpdate::Set {
+            text: "remember q09".to_string(),
+        })
+        .await
+        .expect("persistent note update should succeed");
+    let compacted_history = vec![
+        user_message("latest user request"),
+        user_message(&format!("{SUMMARY_PREFIX}\nsummary text")),
+    ];
+
+    let refreshed = crate::compact_remote::process_compacted_history(
+        &session,
+        &turn_context,
+        compacted_history,
+        InitialContextInjection::BeforeLastUserMessage,
+    )
+    .await;
+
+    let note_index = refreshed
+        .iter()
+        .position(|item| {
+            response_item_text(item).is_some_and(|text| {
+                text.contains("<codex_persistent_user_note>") && text.contains("remember q09")
+            })
+        })
+        .expect("mid-turn compact should preserve the persistent note in initial context");
+    let summary_index = refreshed
+        .iter()
+        .position(|item| response_item_text(item).is_some_and(|text| text.contains("summary text")))
+        .expect("summary should remain in compacted history");
+    assert!(
+        note_index < summary_index,
+        "persistent note should be visible before the compact summary"
+    );
+}
+
+#[tokio::test]
 async fn process_compacted_history_omits_paused_persistent_note() {
     let compacted_history = vec![user_message(&format!("{SUMMARY_PREFIX}\nsummary text"))];
 

@@ -743,6 +743,9 @@ impl App {
             AppEvent::ClearThreadGoal { thread_id } => {
                 self.clear_thread_goal(app_server, thread_id).await;
             }
+            AppEvent::SetPersistentUserNote { update } => {
+                self.chat_widget.set_persistent_note_from_ui(update);
+            }
             AppEvent::SendAddCreditsNudgeEmail { credit_type } => {
                 if self
                     .chat_widget

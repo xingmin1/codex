@@ -30,6 +30,7 @@ impl ChatWidget {
         self.thread_name = session.thread_name.clone();
         self.current_goal_status_indicator = None;
         self.current_goal_status = None;
+        self.current_persistent_note = session.persistent_user_note.clone();
         self.update_collaboration_mode_indicator();
         self.forked_from = session.forked_from_id;
         self.current_rollout_path = session.rollout_path.clone();
