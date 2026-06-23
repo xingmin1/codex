@@ -256,7 +256,8 @@ fn recent_images(history: &[ResponseItem], count: usize) -> Vec<ImageUrl> {
             ResponseItem::CustomToolCall { call_id, .. } => {
                 custom_tool_call_ids.insert(call_id.as_str());
             }
-            ResponseItem::Message { .. }
+            ResponseItem::AdditionalTools { .. }
+            | ResponseItem::Message { .. }
             | ResponseItem::AgentMessage { .. }
             | ResponseItem::Reasoning { .. }
             | ResponseItem::LocalShellCall { .. }
@@ -267,7 +268,7 @@ fn recent_images(history: &[ResponseItem], count: usize) -> Vec<ImageUrl> {
             | ResponseItem::WebSearchCall { .. }
             | ResponseItem::ImageGenerationCall { .. }
             | ResponseItem::Compaction { .. }
-            | ResponseItem::CompactionTrigger
+            | ResponseItem::CompactionTrigger { .. }
             | ResponseItem::ContextCompaction { .. }
             | ResponseItem::Other => {}
         }
@@ -283,9 +284,9 @@ fn recent_images(history: &[ResponseItem], count: usize) -> Vec<ImageUrl> {
                     ContentItem::InputText { .. } | ContentItem::OutputText { .. } => None,
                 }));
             }
-            ResponseItem::FunctionCallOutput { call_id, output }
-                if function_call_ids.contains(call_id.as_str()) =>
-            {
+            ResponseItem::FunctionCallOutput {
+                call_id, output, ..
+            } if function_call_ids.contains(call_id.as_str()) => {
                 image_urls.extend(output_image_urls(output));
             }
             ResponseItem::CustomToolCallOutput {
@@ -296,7 +297,8 @@ fn recent_images(history: &[ResponseItem], count: usize) -> Vec<ImageUrl> {
             ResponseItem::ImageGenerationCall { result, .. } if !result.is_empty() => {
                 image_urls.push(format!("data:image/png;base64,{result}"));
             }
-            ResponseItem::Reasoning { .. }
+            ResponseItem::AdditionalTools { .. }
+            | ResponseItem::Reasoning { .. }
             | ResponseItem::AgentMessage { .. }
             | ResponseItem::LocalShellCall { .. }
             | ResponseItem::FunctionCall { .. }
@@ -308,7 +310,7 @@ fn recent_images(history: &[ResponseItem], count: usize) -> Vec<ImageUrl> {
             | ResponseItem::WebSearchCall { .. }
             | ResponseItem::ImageGenerationCall { .. }
             | ResponseItem::Compaction { .. }
-            | ResponseItem::CompactionTrigger
+            | ResponseItem::CompactionTrigger { .. }
             | ResponseItem::ContextCompaction { .. }
             | ResponseItem::Other => {}
         }
@@ -342,9 +344,10 @@ async fn image_url(
     environment: &ToolEnvironment,
 ) -> Result<ImageUrl, FunctionCallError> {
     let path_uri = PathUri::from_abs_path(path);
+    let sandbox = environment.file_system_sandbox_context.clone();
     let bytes = environment
         .file_system
-        .read_file(&path_uri, Some(&environment.file_system_sandbox_context))
+        .read_file(&path_uri, Some(&sandbox))
         .await
         .map_err(|error| {
             FunctionCallError::RespondToModel(format!(

@@ -20,6 +20,7 @@ fn user_message(text: &str) -> ResponseItem {
             text: text.to_string(),
         }],
         phase: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 
@@ -31,6 +32,19 @@ fn assistant_message(text: &str) -> ResponseItem {
             text: text.to_string(),
         }],
         phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }
+}
+
+fn developer_message(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 
@@ -49,6 +63,7 @@ fn inter_agent_assistant_message(text: &str) -> ResponseItem {
             text: serde_json::to_string(&communication).unwrap(),
         }],
         phase: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 
@@ -85,7 +100,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
         #[allow(deprecated)]
-        cwd: turn_context.cwd.to_path_buf(),
+        cwd: turn_context.cwd.clone(),
         workspace_roots: None,
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
@@ -99,6 +114,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
         personality: turn_context.personality,
         collaboration_mode: Some(turn_context.collaboration_mode.clone()),
         multi_agent_version: None,
+        multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort.clone(),
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
@@ -125,7 +141,7 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
     let mut previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
         #[allow(deprecated)]
-        cwd: turn_context.cwd.to_path_buf(),
+        cwd: turn_context.cwd.clone(),
         workspace_roots: None,
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
@@ -139,6 +155,7 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
         personality: turn_context.personality,
         collaboration_mode: Some(turn_context.collaboration_mode.clone()),
         multi_agent_version: None,
+        multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort.clone(),
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
@@ -823,6 +840,9 @@ async fn record_initial_history_resumed_rollback_drops_incomplete_user_turn_comp
         RolloutItem::Compacted(CompactedItem {
             message: String::new(),
             replacement_history: Some(Vec::new()),
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
             window_id: None,
         }),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
@@ -880,6 +900,9 @@ async fn record_initial_history_resumed_does_not_seed_reference_context_item_aft
         RolloutItem::Compacted(CompactedItem {
             message: String::new(),
             replacement_history: Some(Vec::new()),
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
             window_id: None,
         }),
     ];
@@ -906,6 +929,9 @@ async fn reconstruct_history_legacy_compaction_without_replacement_history_does_
         RolloutItem::Compacted(CompactedItem {
             message: "legacy summary".to_string(),
             replacement_history: None,
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
             window_id: None,
         }),
     ];
@@ -938,6 +964,9 @@ async fn reconstruct_history_legacy_compaction_without_replacement_history_clear
         RolloutItem::Compacted(CompactedItem {
             message: "legacy summary".to_string(),
             replacement_history: None,
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
             window_id: None,
         }),
         RolloutItem::EventMsg(EventMsg::TurnStarted(
@@ -986,7 +1015,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
         #[allow(deprecated)]
-        cwd: turn_context.cwd.to_path_buf(),
+        cwd: turn_context.cwd.clone(),
         workspace_roots: None,
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
@@ -1000,6 +1029,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
         personality: turn_context.personality,
         collaboration_mode: Some(turn_context.collaboration_mode.clone()),
         multi_agent_version: None,
+        multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort.clone(),
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
@@ -1028,10 +1058,14 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
                 ..Default::default()
             },
         )),
-        // Compaction clears baseline until a later TurnContextItem re-establishes it.
+        // A compacted replacement history with developer context still carries the baseline that
+        // the later TurnContextItem refers to.
         RolloutItem::Compacted(CompactedItem {
             message: String::new(),
-            replacement_history: Some(Vec::new()),
+            replacement_history: Some(vec![developer_message("<permissions instructions>")]),
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
             window_id: None,
         }),
         RolloutItem::TurnContext(previous_context_item),
@@ -1068,7 +1102,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
         serde_json::to_value(Some(TurnContextItem {
             turn_id: Some(turn_context.sub_id.clone()),
             #[allow(deprecated)]
-            cwd: turn_context.cwd.to_path_buf(),
+            cwd: turn_context.cwd.clone(),
             workspace_roots: None,
             current_date: turn_context.current_date.clone(),
             timezone: turn_context.timezone.clone(),
@@ -1082,6 +1116,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
             personality: turn_context.personality,
             collaboration_mode: Some(turn_context.collaboration_mode.clone()),
             multi_agent_version: None,
+            multi_agent_mode: None,
             realtime_active: Some(turn_context.realtime_active),
             effort: turn_context.reasoning_effort.clone(),
             summary: codex_protocol::config_types::ReasoningSummary::Auto,
@@ -1091,14 +1126,14 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
 }
 
 #[tokio::test]
-async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_turn_for_compaction_accounting()
- {
+async fn record_initial_history_resumed_contextless_compaction_clears_later_reference_context_item()
+{
     let (session, turn_context) = make_session_and_context().await;
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
         #[allow(deprecated)]
-        cwd: turn_context.cwd.to_path_buf(),
+        cwd: turn_context.cwd.clone(),
         workspace_roots: None,
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
@@ -1112,6 +1147,97 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
         personality: turn_context.personality,
         collaboration_mode: Some(turn_context.collaboration_mode.clone()),
         multi_agent_version: None,
+        multi_agent_mode: None,
+        realtime_active: Some(turn_context.realtime_active),
+        effort: turn_context.reasoning_effort.clone(),
+        summary: codex_protocol::config_types::ReasoningSummary::Auto,
+    };
+    let previous_turn_id = previous_context_item
+        .turn_id
+        .clone()
+        .expect("turn context should have turn_id");
+    let rollout_items = vec![
+        RolloutItem::EventMsg(EventMsg::TurnStarted(
+            codex_protocol::protocol::TurnStartedEvent {
+                turn_id: previous_turn_id.clone(),
+                trace_id: None,
+                started_at: None,
+                model_context_window: Some(128_000),
+                collaboration_mode_kind: ModeKind::Default,
+            },
+        )),
+        RolloutItem::EventMsg(EventMsg::UserMessage(
+            codex_protocol::protocol::UserMessageEvent {
+                client_id: None,
+                message: "seed".to_string(),
+                images: None,
+                local_images: Vec::new(),
+                text_elements: Vec::new(),
+                ..Default::default()
+            },
+        )),
+        RolloutItem::Compacted(CompactedItem {
+            message: String::new(),
+            replacement_history: Some(vec![assistant_message("summary without startup context")]),
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
+            window_id: None,
+        }),
+        RolloutItem::TurnContext(previous_context_item),
+        RolloutItem::EventMsg(EventMsg::TurnComplete(
+            codex_protocol::protocol::TurnCompleteEvent {
+                turn_id: previous_turn_id,
+                last_agent_message: None,
+                completed_at: None,
+                duration_ms: None,
+                time_to_first_token_ms: None,
+            },
+        )),
+    ];
+
+    session
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: ThreadId::default(),
+            history: rollout_items,
+            rollout_path: Some(PathBuf::from("/tmp/resume.jsonl")),
+        }))
+        .await;
+
+    assert_eq!(
+        session.previous_turn_settings().await,
+        Some(PreviousTurnSettings {
+            model: previous_model.to_string(),
+            comp_hash: None,
+            realtime_active: Some(turn_context.realtime_active),
+        })
+    );
+    assert!(session.reference_context_item().await.is_none());
+}
+
+#[tokio::test]
+async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_turn_for_compaction_accounting()
+ {
+    let (session, turn_context) = make_session_and_context().await;
+    let previous_model = "previous-rollout-model";
+    let previous_context_item = TurnContextItem {
+        turn_id: Some(turn_context.sub_id.clone()),
+        #[allow(deprecated)]
+        cwd: turn_context.cwd.clone(),
+        workspace_roots: None,
+        current_date: turn_context.current_date.clone(),
+        timezone: turn_context.timezone.clone(),
+        approval_policy: turn_context.approval_policy.value(),
+        sandbox_policy: turn_context.sandbox_policy(),
+        permission_profile: None,
+        network: None,
+        file_system_sandbox_policy: None,
+        model: previous_model.to_string(),
+        comp_hash: None,
+        personality: turn_context.personality,
+        collaboration_mode: Some(turn_context.collaboration_mode.clone()),
+        multi_agent_version: None,
+        multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort.clone(),
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
@@ -1182,6 +1308,9 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
         RolloutItem::Compacted(CompactedItem {
             message: String::new(),
             replacement_history: Some(Vec::new()),
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
             window_id: None,
         }),
     ];
@@ -1220,7 +1349,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
     let current_context_item = TurnContextItem {
         turn_id: Some(current_turn_id.clone()),
         #[allow(deprecated)]
-        cwd: turn_context.cwd.to_path_buf(),
+        cwd: turn_context.cwd.clone(),
         workspace_roots: None,
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
@@ -1234,6 +1363,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
         personality: turn_context.personality,
         collaboration_mode: Some(turn_context.collaboration_mode.clone()),
         multi_agent_version: None,
+        multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort.clone(),
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
@@ -1340,7 +1470,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
         #[allow(deprecated)]
-        cwd: turn_context.cwd.to_path_buf(),
+        cwd: turn_context.cwd.clone(),
         workspace_roots: None,
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
@@ -1354,6 +1484,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
         personality: turn_context.personality,
         collaboration_mode: Some(turn_context.collaboration_mode.clone()),
         multi_agent_version: None,
+        multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort.clone(),
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
@@ -1416,6 +1547,9 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
         RolloutItem::Compacted(CompactedItem {
             message: String::new(),
             replacement_history: Some(Vec::new()),
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
             window_id: None,
         }),
     ];
@@ -1503,7 +1637,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
         #[allow(deprecated)]
-        cwd: turn_context.cwd.to_path_buf(),
+        cwd: turn_context.cwd.clone(),
         workspace_roots: None,
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
@@ -1517,6 +1651,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
         personality: turn_context.personality,
         collaboration_mode: Some(turn_context.collaboration_mode.clone()),
         multi_agent_version: None,
+        multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort.clone(),
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
@@ -1580,6 +1715,9 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
         RolloutItem::Compacted(CompactedItem {
             message: String::new(),
             replacement_history: Some(Vec::new()),
+            window_number: None,
+            first_window_id: None,
+            previous_window_id: None,
             window_id: None,
         }),
         // A newer TurnStarted replaces the incomplete compacted turn without a matching
